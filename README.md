@@ -13,14 +13,26 @@ EcoAPI turns parsed API call data into actionable diagnostics:
 - Cost analytics
 - Endpoint-level risk/status
 - Optimization suggestions with estimated savings
-- D3.js-ready graph data
+- Graph data for dependency visualization
 
 ## Tech Stack
 
+### API
 - **Cloudflare Workers** — serverless runtime
 - **Hono** — web framework (Workers-compatible, Express-like)
 - **Cloudflare D1** — SQLite database (persistent)
 - **TypeScript** — strict mode
+
+### Dashboard
+- **React 18** + **React Router v7** — SPA with client-side routing
+- **Vite** — build tool, deployed to Cloudflare Pages
+- **TanStack Query v5** — data fetching and caching
+- **Tailwind CSS v4** — utility-first styling
+- **Recharts** — charts and cost visualizations
+
+### VSCode Extension
+- **TypeScript** extension backend
+- **React** webview UI
 
 ## Project Structure
 
@@ -43,6 +55,7 @@ api/                        # Cloudflare Workers API
       health.ts
       projects.ts
       providers.ts
+      chat.ts               # AI chat endpoint
     services/
       analysis-service.ts   # Core analysis engine (pure, sync)
       project-service.ts    # All CRUD via D1 (async)
@@ -58,10 +71,27 @@ api/                        # Cloudflare Workers API
   wrangler.toml
   package.json
   tsconfig.json
-eco-extension/              # VSCode extension
+dashboard/                  # React SPA (Cloudflare Pages)
+  src/
+    app/
+      pages/                # Dashboard, Projects, Endpoints, Suggestions, Graph, AiChat, About
+      layout/               # LandingLayout, Layout
+      components/           # Landing page, animated tree, navbar, particles
+    lib/
+      api.ts                # REST client (BASE_URL → production API)
+      queries.ts            # TanStack Query hooks
+      types.ts              # TypeScript types matching API responses
+    styles/                 # Tailwind, theme, fonts
+  public/
+    _redirects              # Cloudflare Pages SPA fallback (/* /index.html 200)
+  vite.config.ts
+  package.json
+extension/                  # VSCode extension
+  src/                      # Extension backend (TypeScript)
+  webview/                  # React webview UI
 ```
 
-## Setup
+## API Setup
 
 ```bash
 cd api
@@ -74,7 +104,7 @@ npm run dev                             # start local dev server
 
 The app seeds one project + scan via migration for immediate exploration.
 
-## Commands
+## API Commands
 
 Run from the `api/` directory:
 
@@ -86,7 +116,87 @@ Run from the `api/` directory:
 | `npm run db:migrate:local` | Apply D1 migrations locally |
 | `npm run db:migrate:remote` | Apply D1 migrations to production |
 
-## Core Behavior
+## Dashboard Setup
+
+```bash
+cd dashboard
+npm install
+npm run dev        # local dev server (Vite)
+npm run build      # production build → dist/
+npm run preview    # preview the production build locally
+```
+
+### Deploy to Cloudflare Pages
+
+In the Cloudflare Pages new project settings:
+
+| Setting | Value |
+|---------|-------|
+| Root directory | `dashboard` |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Framework preset | None (or Vite) |
+
+## VSCode Extension
+
+The `extension/` folder contains a VSCode extension that runs ECO analysis directly inside your editor — no API server needed.
+
+### What it does
+
+- Scans your workspace for API call patterns (TS, JS, Python, Go, Java, Ruby)
+- Shows results in a persistent **sidebar panel** (Activity Bar)
+- Detects cost, N+1 patterns, missing caching, and unbatched calls
+- AI chat via OpenAI to explain issues and suggest fixes
+
+### Running in development (F5)
+
+1. Open `extension/` as your workspace in VSCode:
+   ```bash
+   code extension/
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   cd webview && npm install && cd ..
+   ```
+3. Press **F5** — builds everything and launches an Extension Development Host window.
+4. Click the **ECO leaf icon** in the Activity Bar to open the sidebar.
+
+### Running from the .vsix
+
+1. Open the Command Palette (`Ctrl+Shift+P`) → **"Extensions: Install from VSIX..."**
+2. Select `extension/eco-api-analyzer-0.1.0.vsix`
+3. Reload VSCode, then click the ECO icon in the Activity Bar.
+
+To build a fresh `.vsix`:
+```bash
+cd extension && npm run package
+```
+
+### Dev workflow (watch mode)
+
+Run both watchers in separate terminals, then **Ctrl+Shift+P → "Developer: Reload Window"** after changes:
+
+```bash
+# Terminal 1 — extension backend
+cd extension && npm run watch:ext
+
+# Terminal 2 — React webview
+cd extension && npm run watch:webview
+```
+
+### Extension settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `eco.openaiApiKey` | `""` | OpenAI API key (prompted on first use if unset) |
+| `eco.openaiModel` | `gpt-4o-mini` | OpenAI model for chat |
+| `eco.scanGlob` | `**/*.{ts,tsx,js,jsx,py,go,java,rb}` | Files to include |
+| `eco.excludeGlob` | `**/node_modules/**,...` | Files to exclude |
+
+---
+
+## Core API Behavior
 
 - CORS headers on all responses
 - `X-Request-Id` on every response
@@ -118,7 +228,7 @@ Run from the `api/` directory:
 
 ## Pricing Table
 
-Defined in `src/config/pricing.ts`:
+Defined in `api/src/config/pricing.ts`:
 
 | Provider | Cost per call (USD) |
 |----------|-------------------|
@@ -209,6 +319,12 @@ GET    /providers?page=1&limit=20
 GET    /providers/:name
 ```
 
+### Chat
+
+```
+POST   /chat
+```
+
 ## Response Formats
 
 **Single resource:**
@@ -233,65 +349,6 @@ GET    /providers/:name
 
 **DELETE:** `204 No Content`
 
-## VSCode Extension
-
-The `eco-extension/` folder contains a VSCode extension that runs ECO analysis directly inside your editor — no API server needed.
-
-### What it does
-
-- Scans your workspace for API call patterns (TS, JS, Python, Go, Java, Ruby)
-- Shows results in a persistent **sidebar panel** (Activity Bar)
-- Detects cost, N+1 patterns, missing caching, and unbatched calls
-- AI chat via OpenAI to explain issues and suggest fixes
-
-### Running in development (F5)
-
-1. Open `eco-extension/` as your workspace in VSCode:
-   ```bash
-   code eco-extension/
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   cd webview && npm install && cd ..
-   ```
-3. Press **F5** — builds everything and launches an Extension Development Host window.
-4. Click the **ECO leaf icon** in the Activity Bar to open the sidebar.
-
-### Running from the .vsix
-
-1. Open the Command Palette (`Ctrl+Shift+P`) → **"Extensions: Install from VSIX..."**
-2. Select `eco-extension/eco-api-analyzer-0.1.0.vsix`
-3. Reload VSCode, then click the ECO icon in the Activity Bar.
-
-To build a fresh `.vsix`:
-```bash
-cd eco-extension && npm run package
-```
-
-### Dev workflow (watch mode)
-
-Run both watchers in separate terminals, then **Ctrl+Shift+P → "Developer: Reload Window"** after changes:
-
-```bash
-# Terminal 1 — extension backend
-cd eco-extension && npm run watch:ext
-
-# Terminal 2 — React webview
-cd eco-extension && npm run watch:webview
-```
-
-### Extension settings
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `eco.openaiApiKey` | `""` | OpenAI API key (prompted on first use if unset) |
-| `eco.openaiModel` | `gpt-4o-mini` | OpenAI model for chat |
-| `eco.scanGlob` | `**/*.{ts,tsx,js,jsx,py,go,java,rb}` | Files to include |
-| `eco.excludeGlob` | `**/node_modules/**,...` | Files to exclude |
-
----
-
 ## Example Workflow
 
 ```bash
@@ -314,58 +371,3 @@ curl -s https://your-worker.workers.dev/projects/{projectId}/suggestions
 # 5. View cost breakdown
 curl -s https://your-worker.workers.dev/projects/{projectId}/cost/by-provider
 ```
-
-## VS Code / Cursor Extension
-
-ECO also ships as a VS Code extension that scans your workspace directly from the editor.
-
-### Install Locally
-
-```bash
-# 1. Install dependencies
-cd eco-extension
-npm install
-cd webview && npm install && cd ..
-
-# 2. Build the extension
-npm run build
-
-# 3. Package as .vsix
-npx @vscode/vsce package --no-dependencies --allow-missing-repository
-```
-
-This produces `eco-api-analyzer-0.1.0.vsix` in the `eco-extension/` folder.
-
-### Install in VS Code / Cursor
-
-**Option A — Command Palette:**
-1. Open VS Code or Cursor
-2. Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
-3. Type **"Install from VSIX"** and select it
-4. Navigate to `eco-extension/eco-api-analyzer-0.1.0.vsix`
-
-**Option B — Terminal:**
-```bash
-# VS Code
-code --install-extension eco-extension/eco-api-analyzer-0.1.0.vsix
-
-# Cursor
-cursor --install-extension eco-extension/eco-api-analyzer-0.1.0.vsix
-```
-
-### Usage
-
-1. Open any project folder in VS Code / Cursor
-2. Press `Cmd+Shift+P` and run **"ECO: Open API Analyzer"**
-3. Click **Start Scanning** to analyze your workspace for API calls
-4. Review suggestions grouped by severity (HIGH / MEDIUM / LOW)
-5. Click **fix** on any suggestion to get an AI-powered code fix via OpenAI
-
-### Configuration
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `eco.openaiApiKey` | `""` | OpenAI API key (prompted on first chat if empty) |
-| `eco.openaiModel` | `gpt-4o-mini` | OpenAI model for the chat feature |
-| `eco.scanGlob` | `**/*.{ts,tsx,js,jsx,py,go,java,rb}` | Files to scan |
-| `eco.excludeGlob` | `**/node_modules/**,**/dist/**,...` | Files to exclude |
