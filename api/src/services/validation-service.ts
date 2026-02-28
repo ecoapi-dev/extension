@@ -86,6 +86,8 @@ export const validateCreateProjectInput = (body: unknown): ProjectInput => {
   if (input.apiCalls !== undefined) {
     if (!Array.isArray(input.apiCalls)) {
       fieldErrors.push({ field: "apiCalls", message: "apiCalls must be an array." });
+    } else if (input.apiCalls.length > MAX_API_CALLS) {
+      fieldErrors.push({ field: "apiCalls", message: `Must contain ${MAX_API_CALLS} or fewer items.` });
     } else {
       apiCalls = input.apiCalls.map((call, index) => validateApiCall(call, index));
     }
@@ -135,11 +137,18 @@ export const validatePatchProjectInput = (body: unknown): ProjectPatchInput => {
   };
 };
 
+const MAX_API_CALLS = 2000;
+
 export const validateScanInput = (body: unknown): ScanInput => {
   const input = ensureObject(body, "body");
   if (!Array.isArray(input.apiCalls)) {
     throw new AppError("VALIDATION_ERROR", "Invalid scan payload", 422, {
       fields: [{ field: "apiCalls", message: "apiCalls is required and must be an array." }]
+    });
+  }
+  if (input.apiCalls.length > MAX_API_CALLS) {
+    throw new AppError("VALIDATION_ERROR", `apiCalls exceeds maximum allowed size of ${MAX_API_CALLS}`, 422, {
+      fields: [{ field: "apiCalls", message: `Must contain ${MAX_API_CALLS} or fewer items.` }]
     });
   }
 

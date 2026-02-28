@@ -5,6 +5,7 @@ import { requestIdMiddleware } from "./middleware/request-id";
 import { requestLoggingMiddleware } from "./middleware/logging";
 import { requireJsonContentType } from "./middleware/content-type";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler";
+import { scanRateLimitMiddleware } from "./middleware/rate-limit";
 import healthRoutes from "./routes/health";
 import projectRoutes from "./routes/projects";
 import providerRoutes from "./routes/providers";
@@ -16,6 +17,7 @@ app.use("*", corsMiddleware);
 app.use("*", requestIdMiddleware);
 app.use("*", requestLoggingMiddleware);
 app.use("*", requireJsonContentType);
+app.post("/projects/:id/scans", scanRateLimitMiddleware);
 
 app.get("/", (c) =>
   c.json({

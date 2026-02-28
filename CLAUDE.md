@@ -14,8 +14,10 @@ REST API for analyzing codebase API call patterns, estimating costs, and generat
 1. `cd api && npm install`
 2. Create D1 database: `npx wrangler d1 create eco-db`
 3. Paste the returned `database_id` into `api/wrangler.toml`
-4. Apply migrations: `npm run db:migrate:local`
-5. Start dev server: `npm run dev`
+4. Create KV namespace: `npx wrangler kv namespace create rate-limit`
+5. Paste the returned `id` and `preview_id` into `api/wrangler.toml` under `[[kv_namespaces]]`
+6. Apply migrations: `npm run db:migrate:local`
+7. Start dev server: `npm run dev`
 
 ## Commands
 
@@ -65,6 +67,12 @@ eco-extension/          # VSCode extension (see eco-extension/)
 - `deleteProject` manually cascades: deletes suggestions → endpoints → scans → project in a `db.batch()`
 - `analyzeApiCalls` in `analysis-service.ts` is pure synchronous logic — no DB access
 - `crypto.randomUUID()` is used as a global (no import needed in Workers runtime)
+
+## Rate Limiting & Payload Limits
+
+- **Payload cap**: `apiCalls` arrays are capped at 2000 items — enforced in `validation-service.ts` for both `POST /projects` and `POST /projects/:id/scans`. Returns 422 if exceeded.
+- **Scan rate limit**: `POST /projects/:id/scans` is limited to **10 scans per 60 seconds per project**, enforced via a Cloudflare KV counter in `middleware/rate-limit.ts`. Returns 429 if exceeded.
+- KV binding name: `KV` (configured in `wrangler.toml` under `[[kv_namespaces]]`)
 
 ## D1 Schema
 

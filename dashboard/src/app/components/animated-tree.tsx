@@ -26,6 +26,7 @@ export function AnimatedTree() {
 
       {/* ===== IMPROVED GNARLY TREE ===== */}
       <svg
+        id="eco-tree-svg"
         viewBox="0 0 1000 1000"
         className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[90%] max-w-[850px] pointer-events-none"
         xmlns="http://www.w3.org/2000/svg"

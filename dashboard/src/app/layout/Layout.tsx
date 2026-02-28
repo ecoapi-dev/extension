@@ -28,6 +28,10 @@ export function Layout() {
     return location.pathname.startsWith(path);
   };
 
+  const minimalBgPaths = ['', '/endpoints', '/chat', '/suggestions'];
+  const pathSuffix = projectId ? (location.pathname.replace(new RegExp(`^/projects/${projectId}`), '') || '').replace(/\/$/, '') || '' : '';
+  const useMinimalBg = minimalBgPaths.includes(pathSuffix);
+
   return (
     <ThemeProvider theme={galaxySunsetTheme}>
       <div
@@ -37,8 +41,8 @@ export function Layout() {
         {/* Background atmosphere */}
         <div className="absolute inset-0 z-0" style={{ background: galaxySunsetTheme.skyGradient }} />
         <div className="absolute inset-0 z-[1] pointer-events-none" style={{ background: 'rgba(0,0,0,0.6)' }} />
-        <Particles />
-        <AnimatedTree />
+        {!useMinimalBg && <Particles />}
+        {!useMinimalBg && <AnimatedTree />}
         <div className="absolute inset-0 z-[6] pointer-events-none" style={{ background: 'rgba(0,0,0,0.4)' }} />
 
         {/* App shell */}

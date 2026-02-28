@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { motion as Motion } from 'motion/react';
-import { Plus, Server, ArrowRight, Loader2, FolderOpen, Leaf, ArrowLeft } from 'lucide-react';
+import { Plus, Server, ArrowRight, Loader2, FolderOpen, Leaf, ArrowLeft, Trash2 } from 'lucide-react';
 import { useTheme } from '../theme-context';
 import { Particles } from '../components/particles';
 import { AnimatedTree } from '../components/animated-tree';
-import { useProjects, useCreateProject } from '@/lib/queries';
+import { useProjects, useCreateProject, useDeleteProject } from '@/lib/queries';
 import type { ProjectInput } from '@/lib/types';
 
 export default function Projects() {
@@ -15,6 +15,8 @@ export default function Projects() {
 
   const { data, isLoading, error } = useProjects({ limit: 100 });
   const projects = data?.data ?? [];
+  const deleteProject = useDeleteProject();
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   return (
     <div className="relative w-full min-h-screen overflow-hidden" style={{ backgroundColor: theme.bg }}>
@@ -125,13 +127,12 @@ export default function Projects() {
               {!isLoading && !error && projects.length > 0 && (
                 <div className="space-y-2">
                   {projects.map((project, i) => (
-                    <Motion.button
+                    <Motion.div
                       key={project.id}
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                      className="w-full text-left p-5 rounded-xl border transition-all duration-200 group"
+                      className="relative rounded-xl border transition-all duration-200 group"
                       style={{
                         backgroundColor: 'rgba(255,255,255,0.03)',
-                        borderColor: 'rgba(255,255,255,0.06)',
+                        borderColor: confirmDelete === project.id ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.06)',
                         fontFamily: "'JetBrains Mono', monospace",
                       }}
                       initial={{ opacity: 0, y: 10 }}
@@ -139,34 +140,75 @@ export default function Projects() {
                       transition={{ duration: 0.3, delay: i * 0.05 }}
                       whileHover={{ y: -2 }}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <h3
-                            className="text-[15px] text-white transition-colors group-hover:text-[#4EAA57]"
-                            style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500 }}
-                          >
-                            {project.name}
-                          </h3>
-                          {project.description && (
-                            <p className="text-[12px] mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.38)' }}>
-                              {project.description}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-4 mt-2.5 text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                            <span className="flex items-center gap-1">
-                              <Server size={10} />
-                              {project.latestScanId ? 'Scanned' : 'No scans'}
-                            </span>
-                            <span>Created {new Date(project.createdAt).toLocaleDateString()}</span>
+                      {/* Clickable project area */}
+                      <button
+                        className="w-full text-left p-5"
+                        onClick={() => navigate(`/projects/${project.id}`)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <h3
+                              className="text-[15px] text-white transition-colors group-hover:text-[#4EAA57]"
+                              style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500 }}
+                            >
+                              {project.name}
+                            </h3>
+                            {project.description && (
+                              <p className="text-[12px] mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.38)' }}>
+                                {project.description}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-4 mt-2.5 text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                              <span className="flex items-center gap-1">
+                                <Server size={10} />
+                                {project.latestScanId ? 'Scanned' : 'No scans'}
+                              </span>
+                              <span>Created {new Date(project.createdAt).toLocaleDateString()}</span>
+                            </div>
                           </div>
+                          <ArrowRight
+                            size={15}
+                            className={`transition-all group-hover:translate-x-1 mr-8 ${confirmDelete === project.id ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}
+                            style={{ color: theme.btnGradient[0] }}
+                          />
                         </div>
-                        <ArrowRight
-                          size={15}
-                          className="opacity-0 group-hover:opacity-100 transition-all group-hover:translate-x-1"
-                          style={{ color: theme.btnGradient[0] }}
-                        />
+                      </button>
+
+                      {/* Delete button */}
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                        {confirmDelete === project.id ? (
+                          <>
+                            <button
+                              onClick={() => setConfirmDelete(null)}
+                              className="text-[11px] px-2 py-1 rounded border transition-colors"
+                              style={{ color: 'rgba(255,255,255,0.5)', borderColor: 'rgba(255,255,255,0.15)' }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                deleteProject.mutate(project.id);
+                                setConfirmDelete(null);
+                              }}
+                              disabled={deleteProject.isPending}
+                              className="text-[11px] px-2 py-1 rounded border border-red-500/50 text-red-400 hover:bg-red-500/10 transition-colors"
+                            >
+                              {deleteProject.isPending ? <Loader2 size={11} className="animate-spin" /> : 'Delete'}
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDelete(project.id)}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all hover:bg-red-500/10"
+                            style={{ color: 'rgba(255,255,255,0.3)' }}
+                            onMouseEnter={(e) => (e.currentTarget.style.color = 'rgb(239,68,68)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
-                    </Motion.button>
+                    </Motion.div>
                   ))}
                 </div>
               )}

@@ -44,74 +44,202 @@ export default function Graph() {
   const edges = graphData?.edges ?? [];
 
   const positioned = useMemo(() => {
-    const fileSet = new Set(edges.map((e) => e.source));
-    const files = [...fileSet];
+    const fileIds = [...new Set(edges.map((e) => e.source))];
     const result: PositionedNode[] = [];
 
-    files.forEach((f, i) => {
-      result.push({
-        id: f,
-        type: 'file',
-        label: f.split('/').pop() ?? f,
-        x: 100,
-        y: 80 + i * 80,
-      });
-    });
+    // Tree geometry in canvas coordinates (tuned for ~1440px viewport)
+    const CX = 640;        // horizontal center of tree
+    const CY = 275;        // vertical center of foliage
+    const RX = 130;        // horizontal radius of foliage ellipse
+    const RY = 145;        // vertical radius of foliage ellipse
+    const MIN_D = 62;      // minimum center-to-center distance between API nodes (44px + 18px gap)
 
+    // --- 1. Place API nodes using a golden-angle spiral (non-overlapping, no gap) ---
+    // Golden-angle spiral distributes points evenly — deterministic so layout is stable
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    const candidates: { x: number; y: number }[] = [];
+    const totalCandidates = Math.max(nodes.length * 6, 50);
+    for (let i = 0; i < totalCandidates; i++) {
+      const r = Math.sqrt((i + 0.5) / totalCandidates);
+      const theta = i * goldenAngle;
+      candidates.push({
+        x: Math.round(CX + r * RX * Math.cos(theta)),
+        y: Math.round(CY + r * RY * Math.sin(theta)),
+      });
+    }
+
+    // Greedily pick non-overlapping positions
+    const picked: { x: number; y: number }[] = [];
+    for (const c of candidates) {
+      if (picked.length >= nodes.length) break;
+      if (picked.every(p => Math.hypot(p.x - c.x, p.y - c.y) >= MIN_D)) {
+        picked.push(c);
+      }
+    }
+    // Fallback if spiral didn't yield enough (shouldn't happen with 6× candidates)
+    while (picked.length < nodes.length) {
+      picked.push({ x: CX + (picked.length % 3 - 1) * MIN_D, y: CY + Math.floor(picked.length / 3) * MIN_D });
+    }
+
+    const apiXY: Record<string, { x: number; y: number }> = {};
     nodes.forEach((n, i) => {
+      const { x, y } = picked[i];
+      apiXY[n.id] = { x, y };
       const method = n.label.split(' ')[0] ?? '';
       const url = n.label.split(' ').slice(1).join(' ') || n.label;
-      result.push({
-        id: n.id,
-        type: 'api',
-        label: url,
-        status: n.status,
-        provider: n.provider,
-        monthlyCost: n.monthlyCost,
-        method,
-        x: 440,
-        y: 60 + i * 100,
-      });
+      result.push({ id: n.id, type: 'api', label: url, status: n.status, provider: n.provider, monthlyCost: n.monthlyCost, method, x, y });
     });
+
+    // --- 2. Place file boxes on the side nearest their connected API nodes ---
+    const fileInfo = fileIds.map((fid) => {
+      const pts = edges
+        .filter((e) => e.source === fid)
+        .map((e) => apiXY[e.target])
+        .filter(Boolean) as { x: number; y: number }[];
+      const cx = pts.length ? pts.reduce((s, p) => s + p.x, 0) / pts.length : CX;
+      const cy = pts.length ? pts.reduce((s, p) => s + p.y, 0) / pts.length : 280;
+      return { id: fid, cx, cy };
+    });
+
+    type Side = 'left' | 'right' | 'btm-left' | 'btm-right';
+    const sides: Record<Side, typeof fileInfo> = { left: [], right: [], 'btm-left': [], 'btm-right': [] };
+    for (const f of fileInfo) {
+      const side: Side = f.cy > 300
+        ? (f.cx <= CX ? 'btm-left' : 'btm-right')
+        : (f.cx <= CX ? 'left' : 'right');
+      sides[side].push(f);
+    }
+
+    // Left files: x=95, y tracks centroid
+    sides.left.sort((a, b) => a.cy - b.cy);
+    let prevY = -Infinity;
+    for (const f of sides.left) {
+      const y = Math.max(f.cy - 16, prevY + 55, 80);
+      prevY = y;
+      result.push({ id: f.id, type: 'file', label: f.id.split('/').pop() ?? f.id, x: 95, y });
+    }
+
+    // Right files: x = CX+295
+    sides.right.sort((a, b) => a.cy - b.cy);
+    prevY = -Infinity;
+    for (const f of sides.right) {
+      const y = Math.max(f.cy - 16, prevY + 55, 80);
+      prevY = y;
+      result.push({ id: f.id, type: 'file', label: f.id.split('/').pop() ?? f.id, x: CX + 295, y });
+    }
+
+    // Bottom-left files: stack leftward from CX
+    const BTM_Y = 510;
+    sides['btm-left'].sort((a, b) => b.cx - a.cx);
+    let prevX = CX - 20;
+    for (const f of sides['btm-left']) {
+      const x = Math.min(prevX - 10, Math.max(100, f.cx - 70));
+      prevX = x - 140;
+      result.push({ id: f.id, type: 'file', label: f.id.split('/').pop() ?? f.id, x, y: BTM_Y });
+    }
+
+    // Bottom-right files: stack rightward from CX
+    sides['btm-right'].sort((a, b) => a.cx - b.cx);
+    prevX = CX + 20;
+    for (const f of sides['btm-right']) {
+      const x = Math.max(prevX + 10, Math.min(800, f.cx + 20));
+      prevX = x + 140;
+      result.push({ id: f.id, type: 'file', label: f.id.split('/').pop() ?? f.id, x, y: BTM_Y });
+    }
 
     return result;
   }, [nodes, edges]);
 
+  // Per-node positions (updated when nodes drag)
+  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+
+  // Reset positions whenever the underlying data changes
+  useEffect(() => {
+    const initial: Record<string, { x: number; y: number }> = {};
+    positioned.forEach((n) => { initial[n.id] = { x: n.x, y: n.y }; });
+    setNodePositions(initial);
+  }, [positioned]);
+
   const [selected, setSelected] = useState<PositionedNode | null>(null);
   const [pan, setPan] = useState({ x: 40, y: 0 });
-  const [dragging, setDragging] = useState(false);
+  const panRef = useRef({ x: 40, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const lastPos = useRef({ x: 0, y: 0 });
 
+  // Node drag state
+  const draggingNodeId = useRef<string | null>(null);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const [draggingId, setDraggingId] = useState<string | null>(null); // for cursor
+
+  // Container ref to convert mouse coords → canvas coords
+  const outerRef = useRef<HTMLDivElement>(null);
+
+  // Keep panRef in sync so drag handlers always have the latest pan
+  useEffect(() => { panRef.current = pan; }, [pan]);
+
+  // --- Node drag handlers ---
+  const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    draggingNodeId.current = nodeId;
+    setDraggingId(nodeId);
+    const rect = outerRef.current?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    const pos = nodePositions[nodeId] ?? { x: 0, y: 0 };
+    const canvasX = e.clientX - rect.left - panRef.current.x;
+    const canvasY = e.clientY - rect.top - panRef.current.y;
+    dragOffset.current = { x: canvasX - pos.x, y: canvasY - pos.y };
+  }, [nodePositions]);
+
+  // --- Canvas pan handlers ---
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('.graph-node')) return;
-    setDragging(true);
+    setIsPanning(true);
     lastPos.current = { x: e.clientX, y: e.clientY };
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!dragging) return;
-    setPan((p) => ({
-      x: p.x + (e.clientX - lastPos.current.x),
-      y: p.y + (e.clientY - lastPos.current.y),
-    }));
+    if (draggingNodeId.current) {
+      const rect = outerRef.current?.getBoundingClientRect() ?? { left: 0, top: 0 };
+      const canvasX = e.clientX - rect.left - panRef.current.x;
+      const canvasY = e.clientY - rect.top - panRef.current.y;
+      const id = draggingNodeId.current;
+      setNodePositions((prev) => ({
+        ...prev,
+        [id]: {
+          x: canvasX - dragOffset.current.x,
+          y: canvasY - dragOffset.current.y,
+        },
+      }));
+      return;
+    }
+    if (!isPanning) return;
+    const newPan = {
+      x: pan.x + (e.clientX - lastPos.current.x),
+      y: pan.y + (e.clientY - lastPos.current.y),
+    };
+    panRef.current = newPan;
+    setPan(newPan);
     lastPos.current = { x: e.clientX, y: e.clientY };
-  }, [dragging]);
+  }, [isPanning, pan]);
 
-  const handleMouseUp = useCallback(() => setDragging(false), []);
-
-  useEffect(() => {
-    const handleGlobalUp = () => setDragging(false);
-    window.addEventListener('mouseup', handleGlobalUp);
-    return () => window.removeEventListener('mouseup', handleGlobalUp);
+  const handleMouseUp = useCallback(() => {
+    draggingNodeId.current = null;
+    setDraggingId(null);
+    setIsPanning(false);
   }, []);
 
-  const getNodeCenter = (node: PositionedNode) => {
-    if (node.type === 'file') return { x: node.x + 65, y: node.y + 16 };
-    return { x: node.x + 22, y: node.y + 22 };
-  };
+  useEffect(() => {
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => window.removeEventListener('mouseup', handleMouseUp);
+  }, [handleMouseUp]);
 
-  const svgHeight = Math.max(800, positioned.length * 90);
-  const svgWidth = 700;
+  // Compute edge center using live nodePositions
+  const getNodeCenter = (nodeId: string, type: 'file' | 'api') => {
+    const pos = nodePositions[nodeId];
+    if (!pos) return { x: 0, y: 0 };
+    if (type === 'file') return { x: pos.x + 65, y: pos.y + 16 };
+    return { x: pos.x + 22, y: pos.y + 22 };
+  };
 
   if (isLoading) {
     return (
@@ -129,7 +257,7 @@ export default function Graph() {
             Dependency Graph
           </h1>
           <p className="text-[12px] mt-1" style={{ color: 'rgba(255,255,255,0.45)' }}>
-            File &rarr; API endpoint relationships · {nodes.length} endpoints · Click a node for details
+            File &rarr; API endpoint relationships · {nodes.length} endpoints · Drag nodes · Click for details
           </p>
         </div>
         <div className="relative">
@@ -155,11 +283,15 @@ export default function Graph() {
 
       {nodes.length > 0 && (
         <div
-          className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing"
+          ref={outerRef}
+          className="flex-1 relative overflow-hidden"
+          style={{
+            background: 'radial-gradient(circle at 50% 30%, rgba(78,170,87,0.05) 0%, transparent 70%)',
+            cursor: draggingId ? 'grabbing' : isPanning ? 'grabbing' : 'grab',
+          }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          style={{ background: 'radial-gradient(circle at 50% 30%, rgba(78,170,87,0.05) 0%, transparent 70%)' }}
         >
           {/* Grid pattern */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-[0.04]">
@@ -172,8 +304,11 @@ export default function Graph() {
           </svg>
 
           <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
-            {/* Edges */}
-            <svg className="absolute inset-0 pointer-events-none" width={svgWidth} height={svgHeight}>
+            {/* Edges — overflow:visible so lines aren't clipped when nodes are dragged far */}
+            <svg
+              className="absolute inset-0 w-full h-full pointer-events-none"
+              style={{ overflow: 'visible' }}
+            >
               <defs>
                 <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
                   <polygon points="0 0, 8 3, 0 6" fill="#4EAA57" opacity="0.4" />
@@ -183,8 +318,8 @@ export default function Graph() {
                 const fromNode = positioned.find((n) => n.id === edge.source);
                 const toNode = positioned.find((n) => n.id === edge.target);
                 if (!fromNode || !toNode) return null;
-                const from = getNodeCenter(fromNode);
-                const to = getNodeCenter(toNode);
+                const from = getNodeCenter(edge.source, fromNode.type);
+                const to = getNodeCenter(edge.target, toNode.type);
                 const isHighlighted = selected && (selected.id === edge.source || selected.id === edge.target);
                 return (
                   <line
@@ -202,26 +337,41 @@ export default function Graph() {
 
             {/* Nodes */}
             {positioned.map((node) => {
+              const pos = nodePositions[node.id] ?? { x: node.x, y: node.y };
               const isSelected = selected?.id === node.id;
               const isConnected = selected && edges.some(
                 (e) => (e.source === selected.id && e.target === node.id) || (e.target === selected.id && e.source === node.id)
               );
               const dimmed = selected && !isSelected && !isConnected;
+              const isBeingDragged = draggingId === node.id;
 
               if (node.type === 'file') {
                 return (
                   <div
                     key={node.id}
-                    className="graph-node absolute cursor-pointer transition-all duration-200"
-                    style={{ left: node.x, top: node.y, opacity: dimmed ? 0.3 : 1 }}
+                    className="graph-node absolute"
+                    style={{
+                      left: pos.x,
+                      top: pos.y,
+                      opacity: dimmed ? 0.3 : 1,
+                      cursor: isBeingDragged ? 'grabbing' : 'grab',
+                      zIndex: isBeingDragged ? 10 : 1,
+                      userSelect: 'none',
+                    }}
+                    onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
                     onClick={() => setSelected(isSelected ? null : node)}
                   >
                     <div
-                      className="px-3 py-1.5 rounded-md border text-[11px] transition-colors backdrop-blur-sm"
+                      className="px-3 py-1.5 rounded-md border text-[11px] backdrop-blur-sm transition-colors"
                       style={{
                         backgroundColor: isSelected ? 'rgba(78,170,87,0.15)' : 'rgba(0,0,0,0.4)',
-                        borderColor: isSelected ? 'rgba(78,170,87,0.4)' : 'rgba(255,255,255,0.1)',
+                        borderColor: isBeingDragged
+                          ? 'rgba(78,170,87,0.6)'
+                          : isSelected
+                          ? 'rgba(78,170,87,0.4)'
+                          : 'rgba(255,255,255,0.1)',
                         color: isSelected ? '#fff' : 'rgba(255,255,255,0.5)',
+                        boxShadow: isBeingDragged ? '0 4px 20px rgba(78,170,87,0.2)' : 'none',
                       }}
                     >
                       {node.label}
@@ -234,16 +384,28 @@ export default function Graph() {
               return (
                 <div
                   key={node.id}
-                  className="graph-node absolute cursor-pointer transition-all duration-200"
-                  style={{ left: node.x, top: node.y, opacity: dimmed ? 0.3 : 1 }}
+                  className="graph-node absolute"
+                  style={{
+                    left: pos.x,
+                    top: pos.y,
+                    opacity: dimmed ? 0.3 : 1,
+                    cursor: isBeingDragged ? 'grabbing' : 'grab',
+                    zIndex: isBeingDragged ? 10 : 1,
+                    userSelect: 'none',
+                  }}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
                   onClick={() => setSelected(isSelected ? null : node)}
                 >
                   <div
-                    className={`w-11 h-11 rounded-full border-2 flex items-center justify-center text-[9px] transition-colors ${isSelected ? 'shadow-lg' : ''}`}
+                    className="w-11 h-11 rounded-full border-2 flex items-center justify-center text-[9px] transition-colors"
                     style={{
-                      borderColor: isSelected ? color : `${color}60`,
+                      borderColor: isBeingDragged ? color : isSelected ? color : `${color}60`,
                       backgroundColor: `${color}15`,
-                      boxShadow: isSelected ? `0 0 12px ${color}30` : 'none',
+                      boxShadow: isBeingDragged
+                        ? `0 4px 20px ${color}40`
+                        : isSelected
+                        ? `0 0 12px ${color}30`
+                        : 'none',
                       color,
                     }}
                   >

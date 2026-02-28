@@ -1,13 +1,87 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { Leaf, Server, Activity, DollarSign, AlertTriangle, TrendingDown, Loader2 } from 'lucide-react';
 import { useProject, useCost, useCostByProvider, useSuggestions, useCreateScan } from '@/lib/queries';
 import type { ApiCallInput } from '@/lib/types';
 
+function useAnimatedValue(target: number, duration = 800) {
+  const [display, setDisplay] = useState(0);
+
+  useEffect(() => {
+    setDisplay(0);
+    if (target === 0) return;
+    const startTime = performance.now();
+    let cancelled = false;
+
+    const tick = (now: number) => {
+      if (cancelled) return;
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - (1 - progress) * (1 - progress);
+      setDisplay(target * eased);
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return () => { cancelled = true; };
+  }, [target, duration]);
+
+  return display;
+}
+
+function AnimatedStatValue({
+  value,
+  format,
+}: {
+  value: number | undefined;
+  format: (n: number) => string;
+}) {
+  const display = useAnimatedValue(value ?? 0);
+
+  if (value === undefined) return <span>-</span>;
+  return <span>{format(display)}</span>;
+}
+
+function AnimatedBar({ percent, backgroundColor }: { percent: number; backgroundColor: string }) {
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    setWidth(0);
+    const id = requestAnimationFrame(() => setWidth(percent));
+    return () => cancelAnimationFrame(id);
+  }, [percent]);
+
+  return (
+    <div
+      className="h-full rounded-md transition-all duration-700 ease-out"
+      style={{ width: `${width}%`, backgroundColor }}
+    />
+  );
+}
+
 function EcoGauge({ score }: { score: number }) {
+  const [displayScore, setDisplayScore] = useState(0);
   const circumference = 2 * Math.PI * 58;
-  const offset = circumference - (score / 100) * circumference;
+  const offset = circumference - (displayScore / 100) * circumference;
   const color = score >= 70 ? '#4EAA57' : score >= 40 ? '#B8A038' : '#C45A4A';
+
+  useEffect(() => {
+    setDisplayScore(0);
+    if (score === 0) return;
+    const duration = 1000;
+    const startTime = performance.now();
+    let cancelled = false;
+
+    const tick = (now: number) => {
+      if (cancelled) return;
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - (1 - progress) * (1 - progress);
+      setDisplayScore(score * eased);
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return () => { cancelled = true; };
+  }, [score]);
 
   return (
     <div className="relative flex items-center justify-center w-44 h-44">
@@ -21,12 +95,11 @@ function EcoGauge({ score }: { score: number }) {
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          className="transition-all duration-1000 ease-out"
           style={{ filter: `drop-shadow(0 0 6px ${color}40)` }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[32px]" style={{ color, fontFamily: "'JetBrains Mono', monospace" }}>{score}</span>
+        <span className="text-[32px]" style={{ color, fontFamily: "'JetBrains Mono', monospace" }}>{Math.round(displayScore)}</span>
         <span className="text-[11px] tracking-wider uppercase" style={{ color: 'rgba(255,255,255,0.45)' }}>Eco Score</span>
       </div>
     </div>
@@ -62,10 +135,10 @@ export default function Dashboard() {
   const totalProviderCost = providers.reduce((sum, p) => sum + p.monthlyCost, 0);
 
   const stats = [
-    { label: 'Endpoints', value: cost?.endpointCount ?? '-', icon: Server },
-    { label: 'Daily API Calls', value: cost ? cost.totalCallsPerDay.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '-', icon: Activity },
-    { label: 'Monthly Cost', value: cost ? `$${cost.totalMonthlyCost.toFixed(2)}` : '-', icon: DollarSign },
-    { label: 'High Risk', value: highRisk, icon: AlertTriangle },
+    { label: 'Endpoints', value: cost?.endpointCount, format: (n: number) => Math.round(n).toString(), icon: Server },
+    { label: 'Daily API Calls', value: cost?.totalCallsPerDay, format: (n: number) => Math.round(n).toLocaleString(undefined, { maximumFractionDigits: 0 }), icon: Activity },
+    { label: 'Monthly Cost', value: cost?.totalMonthlyCost, format: (n: number) => `$${n.toFixed(2)}`, icon: DollarSign },
+    { label: 'High Risk', value: highRisk, format: (n: number) => Math.round(n).toString(), icon: AlertTriangle },
   ];
 
   if (isLoading) {
@@ -114,7 +187,9 @@ export default function Dashboard() {
                 <stat.icon size={14} className="text-[#4EAA57]/60" />
               </div>
               <div>
-                <span className="text-[22px] text-white">{stat.value}</span>
+                <span className="text-[22px] text-white">
+                  <AnimatedStatValue value={stat.value} format={stat.format} />
+                </span>
               </div>
             </div>
           ))}
@@ -149,10 +224,7 @@ export default function Dashboard() {
                 <div key={p.provider} className="flex items-center gap-3">
                   <span className="text-[11px] w-20 shrink-0 capitalize" style={{ color: 'rgba(255,255,255,0.45)' }}>{p.provider}</span>
                   <div className="flex-1 h-5 bg-black/50 rounded-md overflow-hidden relative">
-                    <div
-                      className="h-full rounded-md transition-all duration-700 ease-out"
-                      style={{ width: `${percent}%`, backgroundColor: colors[idx % colors.length] }}
-                    />
+                    <AnimatedBar percent={percent} backgroundColor={colors[idx % colors.length]} />
                   </div>
                   <span className="text-[11px] text-white w-16 text-right">${p.monthlyCost.toFixed(2)}</span>
                   <span className="text-[10px] w-8 text-right" style={{ color: 'rgba(255,255,255,0.4)' }}>{percent}%</span>
