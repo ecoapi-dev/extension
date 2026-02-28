@@ -1,5 +1,5 @@
 {
-  "name": "api-usage-analyzer",
+  "name": "ecoapi",
   "version": "1.0.0",
   "description": "REST API for analyzing codebase web API usage, costs, and optimization suggestions.",
   "private": true,
