@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { EcoSidebarProvider } from "./webview-provider";
 
 export function activate(context: vscode.ExtensionContext) {
-  const provider = new EcoSidebarProvider(context.extensionUri);
+  const provider = new EcoSidebarProvider(context);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(EcoSidebarProvider.viewType, provider, {
@@ -19,7 +19,16 @@ export function activate(context: vscode.ExtensionContext) {
     provider.startScan();
   });
 
-  context.subscriptions.push(openPanelCommand, scanCommand);
+  const clearApiKeyCommand = vscode.commands.registerCommand("eco.clearApiKey", async () => {
+    await context.secrets.delete("eco.openaiApiKey");
+    provider.sendApiKeyCleared();
+  });
+
+  const updateApiKeyCommand = vscode.commands.registerCommand("eco.updateApiKey", () => {
+    provider.sendNeedsApiKey();
+  });
+
+  context.subscriptions.push(openPanelCommand, scanCommand, clearApiKeyCommand, updateApiKeyCommand);
 }
 
 export function deactivate() {}

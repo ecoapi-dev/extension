@@ -42,6 +42,14 @@
         "command": "eco.scanWorkspace",
         "title": "ECO: Scan Workspace",
         "icon": "$(search)"
+      },
+      {
+        "command": "eco.clearApiKey",
+        "title": "ECO: Clear API Key"
+      },
+      {
+        "command": "eco.updateApiKey",
+        "title": "ECO: Update API Key"
       }
     ],
     "menus": {
@@ -56,16 +64,6 @@
     "configuration": {
       "title": "ECO API Analyzer",
       "properties": {
-        "eco.openaiApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "OpenAI API key for the AI chat feature"
-        },
-        "eco.openaiModel": {
-          "type": "string",
-          "default": "gpt-4o-mini",
-          "description": "OpenAI model to use for chat"
-        },
         "eco.scanGlob": {
           "type": "string",
           "default": "**/*.{ts,tsx,js,jsx,py,go,java,rb}",

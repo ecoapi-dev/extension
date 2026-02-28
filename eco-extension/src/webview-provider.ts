@@ -2,9 +2,16 @@ import * as vscode from "vscode";
 import { randomUUID } from "crypto";
 import { scanWorkspace } from "./scanner/workspace-scanner";
 import { analyzeApiCalls } from "./analysis/analysis-service";
-import { streamChatResponse } from "./chat/openai-client";
-import type { WebviewMessage, HostMessage, SuggestionContext } from "./messages";
+import { buildSystemPrompt } from "./chat/prompts";
+import type { WebviewMessage, HostMessage } from "./messages";
 import type { EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
+
+const MODELS = {
+  "gpt-4o": { id: "gpt-4o", name: "GPT-4o" },
+  "gpt-4o-mini": { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+} as const;
+
+type ModelId = keyof typeof MODELS;
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -15,17 +22,18 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "eco.sidebarView";
 
   private _view?: vscode.WebviewView;
-  private readonly extensionUri: vscode.Uri;
+  private readonly context: vscode.ExtensionContext;
 
-  // State
+  // Scan state
   private lastEndpoints: EndpointRecord[] = [];
   private lastSuggestions: Suggestion[] = [];
   private lastSummary: ScanSummary | null = null;
-  private chatHistory: ChatMessage[] = [];
-  private chatContext: SuggestionContext | null = null;
 
-  constructor(extensionUri: vscode.Uri) {
-    this.extensionUri = extensionUri;
+  // Chat state
+  private chatHistory: ChatMessage[] = [];
+
+  constructor(context: vscode.ExtensionContext) {
+    this.context = context;
   }
 
   resolveWebviewView(
@@ -37,7 +45,7 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "webview")],
+      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview")],
     };
 
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
@@ -45,13 +53,31 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(
       (message: WebviewMessage) => this.handleMessage(message)
     );
+
+    // Check API key status once the webview is ready
+    setTimeout(() => this.checkAndNotifyApiKey(), 300);
+  }
+
+  private async checkAndNotifyApiKey() {
+    const apiKey = await this.context.secrets.get("eco.openaiApiKey");
+    if (!apiKey) {
+      this.postMessage({ type: "needsApiKey" });
+    }
   }
 
   public startScan() {
     this._view?.webview.postMessage({ type: "triggerScan" } as HostMessage);
   }
 
-  private postMessage(message: HostMessage) {
+  public sendApiKeyCleared() {
+    this.postMessage({ type: "apiKeyCleared" });
+  }
+
+  public sendNeedsApiKey() {
+    this.postMessage({ type: "needsApiKey" });
+  }
+
+  public postMessage(message: HostMessage) {
     this._view?.webview.postMessage(message);
   }
 
@@ -60,12 +86,21 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
       case "startScan":
         await this.handleStartScan();
         break;
-      case "chatMessage":
-        if (message.context) {
-          this.chatContext = message.context;
-        }
-        await this.handleChatMessage(message.text, message.context ?? this.chatContext);
+      case "chat":
+        await this.handleChat(message.text, message.model);
         break;
+      case "setApiKey":
+        await this.handleSetApiKey(message.key);
+        break;
+      case "modelChanged": {
+        await this.context.globalState.update("eco.selectedModel", message.model);
+        // Also check API key so the webview can show onboarding if needed
+        const apiKey = await this.context.secrets.get("eco.openaiApiKey");
+        if (!apiKey) {
+          this.postMessage({ type: "needsApiKey" });
+        }
+        break;
+      }
       case "applyFix":
         await this.handleApplyFix(message.code, message.file);
         break;
@@ -78,7 +113,6 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
   private async handleStartScan() {
     try {
       this.chatHistory = [];
-      this.chatContext = null;
 
       const apiCalls = await scanWorkspace((progress) => {
         this.postMessage({
@@ -93,16 +127,19 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
       this.postMessage({ type: "scanComplete" });
 
       if (apiCalls.length === 0) {
+        this.lastEndpoints = [];
+        this.lastSuggestions = [];
+        this.lastSummary = {
+          totalEndpoints: 0,
+          totalCallsPerDay: 0,
+          totalMonthlyCost: 0,
+          highRiskCount: 0,
+        };
         this.postMessage({
           type: "scanResults",
           endpoints: [],
           suggestions: [],
-          summary: {
-            totalEndpoints: 0,
-            totalCallsPerDay: 0,
-            totalMonthlyCost: 0,
-            highRiskCount: 0,
-          },
+          summary: this.lastSummary,
         });
         return;
       }
@@ -127,67 +164,108 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async handleChatMessage(text: string, context: SuggestionContext | null) {
-    const config = vscode.workspace.getConfiguration("eco");
-    let apiKey = config.get<string>("openaiApiKey", "");
+  private async handleSetApiKey(key: string) {
+    if (!key.startsWith("sk-")) {
+      this.postMessage({ type: "apiKeyError", message: 'API key must start with "sk-".' });
+      return;
+    }
+    try {
+      await this.context.secrets.store("eco.openaiApiKey", key);
+      this.postMessage({ type: "apiKeyStored" });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to store API key";
+      this.postMessage({ type: "apiKeyError", message });
+    }
+  }
+
+  private async handleChat(text: string, model: string) {
+    const apiKey = await this.context.secrets.get("eco.openaiApiKey");
 
     if (!apiKey) {
-      apiKey = await vscode.window.showInputBox({
-        prompt: "Enter your OpenAI API key",
-        password: true,
-        placeHolder: "sk-...",
-      }) ?? "";
+      this.postMessage({ type: "needsApiKey" });
+      return;
+    }
 
-      if (!apiKey) {
-        this.postMessage({ type: "error", message: "OpenAI API key is required for chat." });
+    // Validate model is known; fall back to gpt-4o-mini
+    const modelId: ModelId = (model in MODELS) ? (model as ModelId) : "gpt-4o-mini";
+
+    const systemPrompt = buildSystemPrompt(this.lastSummary, this.lastSuggestions, this.lastEndpoints);
+
+    const messages = [
+      { role: "system" as const, content: systemPrompt },
+      ...this.chatHistory,
+      { role: "user" as const, content: text },
+    ];
+
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: MODELS[modelId].id,
+          messages,
+          temperature: 0.7,
+          stream: true,
+        }),
+      });
+
+      if (response.status === 401) {
+        await this.context.secrets.delete("eco.openaiApiKey");
+        this.postMessage({ type: "needsApiKey", message: "Invalid API key. Please enter a valid key." });
         return;
       }
 
-      await config.update("openaiApiKey", apiKey, vscode.ConfigurationTarget.Global);
-    }
+      if (response.status === 429) {
+        this.postMessage({ type: "chatError", message: "Rate limited. Wait a moment and try again." });
+        return;
+      }
 
-    const model = config.get<string>("openaiModel", "gpt-4o-mini");
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: { message: "Unknown API error" } }));
+        const errMsg = (errData as { error?: { message?: string } })?.error?.message ?? "API request failed";
+        this.postMessage({ type: "chatError", message: errMsg });
+        return;
+      }
 
-    // Read affected files for context
-    const fileContents = new Map<string, string>();
-    if (context?.files) {
-      for (const file of context.files.slice(0, 3)) {
-        try {
-          const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-          if (workspaceFolder) {
-            const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, file);
-            const content = await vscode.workspace.fs.readFile(fileUri);
-            fileContents.set(file, Buffer.from(content).toString("utf-8"));
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6);
+          if (data === "[DONE]") break;
+          try {
+            const parsed = JSON.parse(data) as { choices: { delta: { content?: string } }[] };
+            const chunk = parsed.choices[0]?.delta?.content ?? "";
+            if (chunk) {
+              fullContent += chunk;
+              this.postMessage({ type: "chatStreaming", chunk });
+            }
+          } catch {
+            // Malformed SSE line, skip
           }
-        } catch {
-          // File not found, skip
         }
       }
-    }
-
-    try {
-      let fullContent = "";
-      const stream = streamChatResponse(
-        apiKey,
-        model,
-        context,
-        fileContents,
-        text,
-        this.chatHistory
-      );
-
-      for await (const chunk of stream) {
-        fullContent += chunk;
-        this.postMessage({ type: "chatStreaming", chunk });
-      }
-
-      this.postMessage({ type: "chatDone", fullContent });
 
       this.chatHistory.push({ role: "user", content: text });
       this.chatHistory.push({ role: "assistant", content: fullContent });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Chat request failed";
-      this.postMessage({ type: "error", message });
+
+      this.postMessage({ type: "chatDone", fullContent });
+    } catch {
+      this.postMessage({ type: "chatError", message: "Network error. Check your connection." });
     }
   }
 
@@ -230,7 +308,7 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private getHtmlForWebview(webview: vscode.Webview): string {
-    const distUri = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+    const distUri = vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview");
 
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, "assets", "index.js"));
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, "assets", "index.css"));

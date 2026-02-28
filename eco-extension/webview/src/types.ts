@@ -60,6 +60,10 @@ export type HostMessage =
   | { type: "scanProgress"; file: string; index: number; total: number; endpointsSoFar: number }
   | { type: "scanComplete" }
   | { type: "scanResults"; endpoints: EndpointRecord[]; suggestions: Suggestion[]; summary: ScanSummary }
-  | { type: "chatStreaming"; chunk: string }
-  | { type: "chatDone"; fullContent: string }
+  | { type: "chatResponse"; text: string }
+  | { type: "chatError"; message: string }
+  | { type: "needsApiKey"; message?: string }
+  | { type: "apiKeyStored" }
+  | { type: "apiKeyError"; message: string }
+  | { type: "apiKeyCleared" }
   | { type: "error"; message: string };

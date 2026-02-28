@@ -382,7 +382,7 @@ export function ResultsPage({ suggestions, summary, endpoints }: ResultsPageProp
   const low = suggestions.filter((s) => s.severity === "low");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* Tab bar */}
       <div className="eco-tabs">
         <button
@@ -399,64 +399,66 @@ export function ResultsPage({ suggestions, summary, endpoints }: ResultsPageProp
         </button>
       </div>
 
-      {tab === "findings" ? (
-        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          {/* Summary bar */}
-          <div
-            style={{
-              padding: "5px 12px",
-              borderBottom: "1px solid var(--vscode-panel-border)",
-              flexShrink: 0,
-              color: "var(--vscode-descriptionForeground)",
-              fontSize: "11px",
-            }}
-          >
-            {summary.totalEndpoints} endpoints
-            <span style={{ margin: "0 5px", opacity: 0.4 }}>·</span>
-            {suggestions.length} suggestions
-            <span style={{ margin: "0 5px", opacity: 0.4 }}>·</span>
-            ${summary.totalMonthlyCost.toFixed(2)}/mo
-            {summary.highRiskCount > 0 && (
-              <>
-                <span style={{ margin: "0 5px", opacity: 0.4 }}>·</span>
-                <span style={{ color: "var(--vscode-editorError-foreground)" }}>
-                  {summary.highRiskCount} high
-                </span>
-              </>
-            )}
-          </div>
-
-          {/* Content */}
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {suggestions.length === 0 ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "40px 16px",
-                  gap: "8px",
-                  color: "var(--vscode-descriptionForeground)",
-                }}
-              >
-                <span className="codicon codicon-check" style={{ fontSize: "24px" }} />
-                <span>No issues found</span>
-              </div>
-            ) : (
-              <>
-                <SeverityGroup label="HIGH" suggestions={high} expanded={expanded} onToggle={toggleCard} onAskAI={handleAskAI} />
-                <SeverityGroup label="MEDIUM" suggestions={medium} expanded={expanded} onToggle={toggleCard} onAskAI={handleAskAI} />
-                <SeverityGroup label="LOW" suggestions={low} expanded={expanded} onToggle={toggleCard} onAskAI={handleAskAI} />
-              </>
-            )}
-
-            {endpoints.length > 0 && <EndpointsList endpoints={endpoints} />}
-          </div>
+      {/* Findings — always mounted to preserve scroll position; hidden via display */}
+      <div style={{ flex: 1, overflow: "hidden", display: tab === "findings" ? "flex" : "none", flexDirection: "column", minHeight: 0 }}>
+        {/* Summary bar */}
+        <div
+          style={{
+            padding: "5px 12px",
+            borderBottom: "1px solid var(--vscode-panel-border)",
+            flexShrink: 0,
+            color: "var(--vscode-descriptionForeground)",
+            fontSize: "11px",
+          }}
+        >
+          {summary.totalEndpoints} endpoints
+          <span style={{ margin: "0 5px", opacity: 0.4 }}>·</span>
+          {suggestions.length} suggestions
+          <span style={{ margin: "0 5px", opacity: 0.4 }}>·</span>
+          ${summary.totalMonthlyCost.toFixed(2)}/mo
+          {summary.highRiskCount > 0 && (
+            <>
+              <span style={{ margin: "0 5px", opacity: 0.4 }}>·</span>
+              <span style={{ color: "var(--vscode-editorError-foreground)" }}>
+                {summary.highRiskCount} high
+              </span>
+            </>
+          )}
         </div>
-      ) : (
+
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {suggestions.length === 0 ? (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "40px 16px",
+                gap: "8px",
+                color: "var(--vscode-descriptionForeground)",
+              }}
+            >
+              <span className="codicon codicon-check" style={{ fontSize: "24px" }} />
+              <span>No issues found</span>
+            </div>
+          ) : (
+            <>
+              <SeverityGroup label="HIGH" suggestions={high} expanded={expanded} onToggle={toggleCard} onAskAI={handleAskAI} />
+              <SeverityGroup label="MEDIUM" suggestions={medium} expanded={expanded} onToggle={toggleCard} onAskAI={handleAskAI} />
+              <SeverityGroup label="LOW" suggestions={low} expanded={expanded} onToggle={toggleCard} onAskAI={handleAskAI} />
+            </>
+          )}
+
+          {endpoints.length > 0 && <EndpointsList endpoints={endpoints} />}
+        </div>
+      </div>
+
+      {/* Chat — always mounted to preserve message history; hidden via display */}
+      <div style={{ flex: 1, display: tab === "chat" ? "flex" : "none", flexDirection: "column", minHeight: 0 }}>
         <ChatPage context={chatContext} />
-      )}
+      </div>
     </div>
   );
 }
