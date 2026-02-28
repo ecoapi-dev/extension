@@ -64,7 +64,6 @@ html, body, #root {
 .eco-tab.active {
   color: var(--vscode-tab-activeForeground);
   background: var(--vscode-tab-activeBackground);
-  border-bottom-color: var(--vscode-tab-activeBorderTop, var(--vscode-focusBorder));
 }
 
 .eco-tab.active::after {
