@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8787";
+const BASE_URL = "https://api.ecoapi.dev";
 
 export class ApiError extends Error {
   code: string;
