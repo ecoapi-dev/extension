@@ -1,0 +1,70 @@
+{
+  "name": "eco-api-analyzer",
+  "displayName": "ECO - API Usage Analyzer",
+  "description": "Scan your codebase for API call patterns, estimate costs, and get optimization suggestions.",
+  "version": "0.1.0",
+  "publisher": "eco",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "eco.openPanel",
+        "title": "ECO: Open API Analyzer"
+      },
+      {
+        "command": "eco.scanWorkspace",
+        "title": "ECO: Scan Workspace"
+      }
+    ],
+    "configuration": {
+      "title": "ECO API Analyzer",
+      "properties": {
+        "eco.openaiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API key for the AI chat feature"
+        },
+        "eco.openaiModel": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "OpenAI model to use for chat"
+        },
+        "eco.scanGlob": {
+          "type": "string",
+          "default": "**/*.{ts,tsx,js,jsx,py,go,java,rb}",
+          "description": "Glob pattern for files to scan"
+        },
+        "eco.excludeGlob": {
+          "type": "string",
+          "default": "**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.next/**,**/vendor/**",
+          "description": "Glob pattern for files to exclude from scanning"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "npm run build:webview && npm run build:ext",
+    "build:ext": "node esbuild.mjs",
+    "build:webview": "cd webview && npm run build",
+    "watch:ext": "node esbuild.mjs --watch",
+    "watch:webview": "cd webview && npm run build -- --watch",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "openai": "^4.73.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.8.0"
+  }
+}
