@@ -1,4 +1,5 @@
-const BASE_URL = "https://api.ecoapi.dev";
+// const BASE_URL = "https://api.ecoapi.dev"; // use this for production
+const BASE_URL = "http://localhost:8787"; // use this for local development
 
 export class ApiError extends Error {
   code: string;

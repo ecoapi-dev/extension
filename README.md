@@ -73,7 +73,7 @@ api/                        # Cloudflare Workers API
   wrangler.toml
   package.json
   tsconfig.json
-dashboard/                  # React SPA (Cloudflare Pages)
+docpages/                   # React SPA (Cloudflare Pages)
   src/
     app/
       pages/                # Dashboard, Projects, Endpoints, Suggestions, Graph, AiChat, About
@@ -118,10 +118,10 @@ Run from the `api/` directory:
 | `npm run db:migrate:local` | Apply D1 migrations locally |
 | `npm run db:migrate:remote` | Apply D1 migrations to production |
 
-## Dashboard Setup
+## Docpages Setup
 
 ```bash
-cd dashboard
+cd docpages
 npm install
 npm run dev        # local dev server (Vite)
 npm run build      # production build → dist/
@@ -134,7 +134,7 @@ In the Cloudflare Pages new project settings:
 
 | Setting | Value |
 |---------|-------|
-| Root directory | `dashboard` |
+| Root directory | `docpages` |
 | Build command | `npm run build` |
 | Build output directory | `dist` |
 | Framework preset | None (or Vite) |

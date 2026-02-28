@@ -193,7 +193,7 @@ export default function About() {
               className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full text-white text-[15px] transition-all hover:-translate-y-0.5"
               style={{ background: `linear-gradient(to right, ${theme.btnGradient[0]}, ${theme.btnGradient[1]})`, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}
             >
-              Get Started
+              Dashboard
               <ArrowRight size={16} />
             </button>
           </Motion.div>
