@@ -20,6 +20,12 @@ import {
   DollarSign,
   Search,
 } from 'lucide-react';
+import {
+  type CarouselApi,
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+} from '../components/ui/carousel';
 
 // ─── Animation helper ────────────────────────────────────────────────────────
 
@@ -164,6 +170,67 @@ function DataTable({ rows, headers }: { rows: string[][]; headers: string[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ─── DashboardScreenshots ────────────────────────────────────────────────────
+
+const DASHBOARD_SLIDES = [
+  { src: '/dashboardcaptures/landingdash.png', label: 'Overview' },
+  { src: '/dashboardcaptures/endpoints.png', label: 'Endpoints' },
+  { src: '/dashboardcaptures/suggestions.png', label: 'Suggestions' },
+  { src: '/dashboardcaptures/dependencygraph.png', label: 'Graph' },
+];
+
+function DashboardScreenshots() {
+  const [api, setApi] = React.useState<CarouselApi>();
+  const [current, setCurrent] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!api) return;
+    api.on('select', () => setCurrent(api.selectedScrollSnap()));
+  }, [api]);
+
+  return (
+    <div className="mb-6">
+      <Carousel setApi={setApi} opts={{ loop: true }} className="w-full">
+        <CarouselContent>
+          {DASHBOARD_SLIDES.map(({ src, label }, i) => (
+            <CarouselItem key={i}>
+              <img
+                src={src}
+                alt={label}
+                className="w-full rounded-xl block"
+                style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+              />
+            </CarouselItem>
+          ))}
+        </CarouselContent>
+      </Carousel>
+      <div className="flex items-center justify-center gap-5 mt-3">
+        {DASHBOARD_SLIDES.map(({ label }, i) => (
+          <button
+            key={i}
+            onClick={() => api?.scrollTo(i)}
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '10px',
+              letterSpacing: '0.07em',
+              textTransform: 'uppercase',
+              color: i === current ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.18)',
+              background: 'none',
+              border: 'none',
+              borderBottom: i === current ? '1px solid rgba(255,255,255,0.35)' : '1px solid transparent',
+              paddingBottom: '2px',
+              cursor: 'pointer',
+              transition: 'color 0.15s, border-color 0.15s',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -604,6 +671,7 @@ cd extension && npm run watch:webview`}</CodeBlock>
                   </div>
                 ))}
               </div>
+              <DashboardScreenshots />
               <SubHeading>Build the dashboard</SubHeading>
               <CodeBlock>{`# from extension/
 npm run build:dashboard`}</CodeBlock>
