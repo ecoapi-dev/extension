@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { motion as Motion } from 'motion/react';
 import { Link } from 'react-router';
 import { useTheme } from '../theme-context';
@@ -446,26 +446,13 @@ const TOC_SECTIONS = [
   },
 ];
 
-function TOCSidebar() {
+function TOCSidebar({ activeSection }: { activeSection: string }) {
   const theme = useTheme();
   return (
     <nav
-      className="flex-1 flex flex-col min-h-0 overflow-y-auto"
+      className="flex-1 flex flex-col min-h-0 overflow-y-auto scrollbar-hide"
       style={{ width: '100%', minWidth: '280px' }}
     >
-      <p
-        style={{
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: '18px',
-          fontWeight: 600,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          color: 'rgba(255,255,255,0.65)',
-          marginBottom: '14px',
-        }}
-      >
-        Contents
-      </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {TOC_SECTIONS.map((section, sectionIndex) => (
           <div key={section.label}>
@@ -483,32 +470,41 @@ function TOCSidebar() {
             >
               {section.label}
             </p>
-            {section.items.map(({ id, label }) => (
-              <a
-                key={id}
-                href={`#${id}`}
-                style={{
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: '15px',
-                  color: 'rgba(255,255,255,0.3)',
-                  textDecoration: 'none',
-                  padding: '6px 10px 6px 16px',
-                  borderRadius: '8px',
-                  display: 'block',
-                  transition: 'color 0.15s, background 0.15s',
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLAnchorElement).style.color = theme.btnGradient[0];
-                  (e.currentTarget as HTMLAnchorElement).style.background = `${theme.btnGradient[0]}10`;
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLAnchorElement).style.color = 'rgba(255,255,255,0.3)';
-                  (e.currentTarget as HTMLAnchorElement).style.background = 'transparent';
-                }}
-              >
-                {label}
-              </a>
-            ))}
+            {section.items.map(({ id, label }) => {
+              const isActive = activeSection === id;
+              return (
+                <a
+                  key={id}
+                  href={`#${id}`}
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: isActive ? '16px' : '15px',
+                    fontWeight: isActive ? 600 : 400,
+                    color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.3)',
+                    background: 'transparent',
+                    textDecoration: 'none',
+                    padding: '6px 10px 6px 16px',
+                    borderRadius: '8px',
+                    display: 'block',
+                    transition: 'color 0.2s, background 0.2s, font-size 0.2s, font-weight 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLAnchorElement).style.color = theme.btnGradient[0];
+                      (e.currentTarget as HTMLAnchorElement).style.background = `${theme.btnGradient[0]}10`;
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLAnchorElement).style.color = 'rgba(255,255,255,0.3)';
+                      (e.currentTarget as HTMLAnchorElement).style.background = 'transparent';
+                    }
+                  }}
+                >
+                  {label}
+                </a>
+              );
+            })}
           </div>
         ))}
       </div>
@@ -521,6 +517,21 @@ function TOCSidebar() {
 export default function Docs() {
   const theme = useTheme();
   const mainRef = useRef<HTMLElement>(null);
+  const [activeSection, setActiveSection] = useState<string>('');
+
+  useEffect(() => {
+    const ids = TOC_SECTIONS.flatMap(s => s.items.map(i => i.id));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) setActiveSection(entry.target.id);
+        });
+      },
+      { rootMargin: '-10% 0px -80% 0px', threshold: 0 }
+    );
+    ids.forEach(id => { const el = document.getElementById(id); if (el) observer.observe(el); });
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="relative w-full h-screen overflow-hidden flex flex-col" style={{ backgroundColor: theme.bg }}>
@@ -531,7 +542,7 @@ export default function Docs() {
 
       {/* Top bar — sticky, never scrolls */}
       <header
-        className="sticky top-0 z-20 flex-shrink-0 flex items-center justify-between px-8 pt-8 pb-4"
+        className="sticky top-0 z-20 flex-shrink-0 flex items-center justify-between px-8 py-3"
         style={{
           backgroundColor: 'rgba(0,0,0,0.5)',
           backdropFilter: 'blur(12px)',
@@ -559,38 +570,34 @@ export default function Docs() {
       <div className="flex flex-1 min-h-0 relative z-10">
         {/* Left: TOC sidebar — fills full height between header and bottom */}
         <aside
-          className="hidden md:flex flex-col shrink-0 pl-4 pr-2 pt-6 w-[320px] self-stretch"
+          className="hidden md:flex flex-col shrink-0 px-8 pt-14 pb-8 w-[260px] self-stretch"
           style={{
             backgroundColor: 'rgba(0,0,0,0.35)',
             borderRight: '1px solid rgba(255,255,255,0.08)',
           }}
         >
-          <TOCSidebar />
+          <TOCSidebar activeSection={activeSection} />
         </aside>
 
         {/* Right: scrollable content */}
-        <main ref={mainRef} className="flex-1 overflow-y-auto min-w-0">
-          <div className="px-2 pb-24 max-w-5xl mx-auto">
+        <main ref={mainRef} className="flex-1 overflow-y-auto scrollbar-hide px-6 md:px-10">
+          <div className="pb-24 space-y-5">
             {/* Hero */}
-            <Motion.div {...FADE(0)} className="text-center px-4 pt-10 pb-12">
+            <Motion.div {...FADE(0)} className="px-4 pt-14 pb-6">
               <h1
-                className="text-[48px] md:text-[64px] text-white mb-4"
+                className="text-[40px] md:text-[52px] text-white mb-3"
                 style={{ fontFamily: "'Playfair Display', serif", fontWeight: 900, lineHeight: 1.05 }}
               >
                 API Docs
               </h1>
               <p
-                className="text-[16px] max-w-2xl mx-auto"
-                style={{ color: 'rgba(255,255,255,0.5)', fontFamily: "'Inter', sans-serif", lineHeight: 1.7 }}
+                style={{ fontFamily: "'Inter', sans-serif", fontSize: '16px', color: 'rgba(255,255,255,0.45)', lineHeight: 1.7 }}
               >
                 Complete reference for every EcoApi endpoint — request shapes, response formats, rate limits, and curl examples.
               </p>
             </Motion.div>
 
-            {/* Main content */}
-            <div className="space-y-5">
-
-              {/* ── 1. Overview ─────────────────────────────────────── */}
+            {/* ── 1. Overview ─────────────────────────────────────── */}
               <SectionCard id="overview" icon={Zap} badge="Overview" title="What is EcoApi?" subtitle="Analyze · Estimate · Optimize · Sustainability" delay={0.05}>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: '14px', color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, marginBottom: '12px' }}>
                   EcoApi is a REST API that turns parsed API call data from your codebase into actionable diagnostics.
@@ -1409,7 +1416,6 @@ curl -s https://your-worker.workers.dev/projects/{projectId}/sustainability`}</C
                 />
               </SectionCard>
 
-            </div>
           </div>
         </main>
       </div>
