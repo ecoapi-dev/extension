@@ -515,3 +515,6 @@ curl -s https://your-worker.workers.dev/projects/{projectId}/cost/by-provider
 # 6. View sustainability stats
 curl -s https://your-worker.workers.dev/projects/{projectId}/sustainability
 ```
+
+
+Copyright © 2026 Andres Lopez, Aslan Wang, Donggyu Yoon. All rights reserved.   
