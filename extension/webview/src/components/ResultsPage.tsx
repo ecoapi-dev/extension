@@ -497,7 +497,6 @@ export function ResultsPage({
           title="Open Dashboard"
           style={{ marginLeft: "auto", padding: "0 8px", fontSize: "11px", display: "flex", alignItems: "center", gap: "3px" }}
         >
-          <span className="codicon codicon-link-external" style={{ fontSize: "11px" }} />
           Dashboard
         </button>
       </div>

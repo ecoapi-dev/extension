@@ -18,9 +18,9 @@ export function ScanningPage({ files, currentIndex, endpointCount, total, error 
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        justifyContent: "center",
+        justifyContent: "flex-start",
         height: "100%",
-        padding: "24px",
+        padding: "56px 24px 24px",
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", maxWidth: "320px" }}>

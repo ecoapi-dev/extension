@@ -69,6 +69,11 @@
           "default": "**/*.{ts,tsx,js,jsx,py,go,java,rb}",
           "description": "Glob pattern for files to scan"
         },
+        "eco.scanIncludeGlobs": {
+          "type": "string",
+          "default": "",
+          "description": "Optional comma-separated allowlist globs. When set, only matching files are scanned (example: packages/**/src/**,packages/**/test/**,prod-server-integration-tests/**)."
+        },
         "eco.excludeGlob": {
           "type": "string",
           "default": "**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.next/**,**/vendor/**,**/venv/**,**/.venv/**,**/__pycache__/**",

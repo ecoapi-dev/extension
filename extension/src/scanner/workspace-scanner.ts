@@ -3,8 +3,23 @@ import { ApiCallInput } from "../analysis/types";
 import { matchLine, matchRouteDefinitionLine, isInsideLoop } from "./patterns";
 
 const MAX_FILES = 5000;
-const HTTP_CALL_HINT = /\b(fetch|axios|got|superagent|ky|requests|http\.|\$http)\b/i;
+const HTTP_CALL_HINT =
+  /\b(fetch|axios|got|superagent|ky|requests|http\.|\$http|openai|responses|completions|embeddings|moderations|vector_stores|vectorStores|assistants|threads|realtime|uploads|batches|containers|skills|videos|evals|images|audio|files|models)\b/i;
 const GENERIC_TEMPLATE_SEGMENT = /\$\{\s*(endpoint|url|path|uri|route)\s*\}/i;
+const HARD_EXCLUDED_SEGMENTS = new Set([
+  "node_modules",
+  "docs",
+  "examples",
+  "dist",
+  "build",
+  "coverage",
+  ".git",
+  ".next",
+  "vendor",
+  "venv",
+  ".venv",
+  "__pycache__",
+]);
 
 export interface LocalWasteFinding {
   id: string;
@@ -56,6 +71,46 @@ async function readUriText(uri: vscode.Uri): Promise<string> {
   return Buffer.from(content).toString("utf-8");
 }
 
+function parseCsvGlobs(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function isHardExcludedPath(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, "/");
+  const segments = normalized.split("/");
+  return segments.some((segment) => HARD_EXCLUDED_SEGMENTS.has(segment));
+}
+
+async function findScopedUris(config: vscode.WorkspaceConfiguration): Promise<vscode.Uri[]> {
+  const includeGlob = config.get<string>("scanGlob", "**/*.{ts,tsx,js,jsx,py,go,java,rb}");
+  const scopedInclude = parseCsvGlobs(config.get<string>("scanIncludeGlobs", ""));
+  const configuredExclude = config.get<string>(
+    "excludeGlob",
+    "**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.next/**,**/vendor/**"
+  );
+  const hardExcludeGlob =
+    "**/node_modules/**,**/docs/**,**/examples/**,**/dist/**,**/build/**,**/coverage/**,**/.git/**,**/.next/**,**/vendor/**,**/venv/**,**/.venv/**,**/__pycache__/**";
+  const mergedExclude = configuredExclude ? `${configuredExclude},${hardExcludeGlob}` : hardExcludeGlob;
+
+  const includePatterns = scopedInclude.length > 0 ? scopedInclude : [includeGlob];
+  const uriByPath = new Map<string, vscode.Uri>();
+
+  for (const pattern of includePatterns) {
+    const uris = await vscode.workspace.findFiles(pattern, mergedExclude, MAX_FILES);
+    for (const uri of uris) {
+      const relativePath = vscode.workspace.asRelativePath(uri, false);
+      if (isHardExcludedPath(relativePath)) continue;
+      uriByPath.set(uri.toString(), uri);
+    }
+  }
+
+  return Array.from(uriByPath.values());
+}
+
 export async function readWorkspaceFileExcerpt(
   relativePath: string,
   options?: { centerLine?: number; contextLines?: number; maxChars?: number }
@@ -89,13 +144,7 @@ export async function scanWorkspace(
   onProgress?: (progress: ScanProgress) => void
 ): Promise<ApiCallInput[]> {
   const config = vscode.workspace.getConfiguration("eco");
-  const includeGlob = config.get<string>("scanGlob", "**/*.{ts,tsx,js,jsx,py,go,java,rb}");
-  const excludeGlob = config.get<string>(
-    "excludeGlob",
-    "**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.next/**,**/vendor/**"
-  );
-
-  const uris = await vscode.workspace.findFiles(includeGlob, excludeGlob, MAX_FILES);
+  const uris = await findScopedUris(config);
   const allCalls: ApiCallInput[] = [];
   const dedupe = new Set<string>();
   const uniqueEndpointKeys = new Set<string>();
@@ -206,7 +255,12 @@ function detectInFile(file: FileContext): LocalWasteFinding[] {
   const fetchCallCount = (text.match(/\bfetch\(/g) ?? []).length;
   const axiosCallCount = (text.match(/\baxios(?:\.\w+)?\s*\(/g) ?? []).length;
   const requestsCallCount = (text.match(/\brequests\.(get|post|put|patch|delete)\(/g) ?? []).length;
-  const totalHttpCallCount = fetchCallCount + axiosCallCount + requestsCallCount;
+  const openAiCallCount = (
+    text.match(
+      /\b[A-Za-z_$][\w$]*\.(?:beta\.)?(?:completions|chat|embeddings|files|images|audio|moderations|models|fine_tuning|fineTuning|vector_stores|vectorStores|batches|uploads|responses|realtime|conversations|evals|containers|skills|videos|assistants|threads)(?:\.[A-Za-z_][\w$]*){0,12}\.(?:create_and_run_stream|create_and_run_poll|create_and_run|create_and_stream|create_and_poll|upload_and_poll|submit_tool_outputs_and_poll|submit_tool_outputs_stream|submit_tool_outputs|wait_for_processing|download_content|retrieve_content|create_variation|list_events|list_files|generate|retrieve|update|delete|cancel|search|validate|stream|upload|content|complete|create|list|poll|edit|run|remix|pause|resume)\s*\(/gi
+    ) ?? []
+  ).length;
+  const totalHttpCallCount = fetchCallCount + axiosCallCount + requestsCallCount + openAiCallCount;
 
   if (has(/Promise\.all\([\s\S]{0,300}length:\s*streamCount/gi, text) && has(/streamCount\s*=\s*200/g, text)) {
     findings.push(
@@ -286,7 +340,7 @@ function detectInFile(file: FileContext): LocalWasteFinding[] {
     );
   }
 
-  if (has(/Promise\.all\([\s\S]{0,500}\.map\(/gi, text) && has(/\b(fetch|axios|got|superagent|ky)\b/gi, text)) {
+  if (has(/Promise\.all\([\s\S]{0,500}\.map\(/gi, text) && has(/\b(fetch|axios|got|superagent|ky|openai|responses|completions|embeddings|moderations)\b/gi, text)) {
     findings.push(
       makeFinding(
         file,
@@ -409,13 +463,7 @@ function detectInFile(file: FileContext): LocalWasteFinding[] {
 
 export async function detectLocalWastePatterns(): Promise<LocalWasteFinding[]> {
   const config = vscode.workspace.getConfiguration("eco");
-  const includeGlob = config.get<string>("scanGlob", "**/*.{ts,tsx,js,jsx,py,go,java,rb}");
-  const excludeGlob = config.get<string>(
-    "excludeGlob",
-    "**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.next/**,**/vendor/**"
-  );
-
-  const uris = await vscode.workspace.findFiles(includeGlob, excludeGlob, MAX_FILES);
+  const uris = await findScopedUris(config);
   const findings: LocalWasteFinding[] = [];
 
   for (const uri of uris) {
