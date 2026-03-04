@@ -2,7 +2,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXT_DIR="$SCRIPT_DIR/extension"
+EXT_DIR="$SCRIPT_DIR/.."
 
 echo "==> Installing extension dependencies..."
 cd "$EXT_DIR"
@@ -10,6 +10,10 @@ npm install
 
 echo "==> Installing webview dependencies..."
 cd "$EXT_DIR/webview"
+npm install
+
+echo "==> Installing dashboard dependencies..."
+cd "$EXT_DIR/dashboard"
 npm install
 
 echo "==> Building extension (dashboard + webview + backend)..."
