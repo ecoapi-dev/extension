@@ -2,8 +2,6 @@
 
 VSCode extension that scans your workspace for API call patterns, estimates costs, and generates optimization suggestions — all locally, no remote server required.
 
-![Alt text](/media/eco-icon.svg)
-
 ## Why This Exists
 
 Developers often ship API-heavy features without visibility into:
@@ -55,23 +53,44 @@ dashboard/                  # Full React dashboard (built into dashboard-dist/)
     lib/                    # API client, TanStack Query hooks, types
 dashboard-dist/             # Built dashboard (generated — do not edit)
 scripts/
-  start-extension.sh        # Full dev setup
+  build-vsix.sh             # Build & package as .vsix (run in bash)
+  start-extension.sh        # Full dev setup (F5 workflow)
   install-dashboard.sh
 ```
 
+## Install from .vsix (recommended)
+
+Run in a **bash terminal** (Git Bash / WSL on Windows — not PowerShell or CMD):
+
+```bash
+bash scripts/build-vsix.sh
+```
+
+Then install the generated file:
+
+```bash
+code --install-extension eco-api-analyzer-0.1.0.vsix
+# or: Ctrl+Shift+P → "Extensions: Install from VSIX..."
+```
+
+Reload the window when prompted, then click the **ECO leaf icon** in the Activity Bar.
+
 ## Quick Start (Dev)
+
+For developing on the extension itself:
 
 ```bash
 bash scripts/start-extension.sh
 ```
 
-Then press **F5** in VSCode to launch the Extension Development Host, and click the **ECO leaf icon** in the Activity Bar.
+Then press **F5** in VSCode to launch the Extension Development Host.
 
-## Install from .vsix
+If deps are already installed, rebuild and repackage with:
 
-1. Command Palette (`Ctrl+Shift+P`) → **"Extensions: Install from VSIX..."**
-2. Select `eco-api-analyzer-0.1.0.vsix`
-3. Reload VSCode, then click the ECO icon in the Activity Bar.
+```bash
+cd extension
+npm run build && npm run package
+```
 
 ## API
 

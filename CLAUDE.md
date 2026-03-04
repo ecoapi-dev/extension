@@ -83,6 +83,25 @@ Run from the root (`extension/`) directory:
 | `npm run watch:webview` | Watch webview |
 | `npm run package` | Package as `.vsix` |
 
+## Local Install (VSIX)
+
+Use the build script — it installs all deps, builds everything, and packages the `.vsix`.
+Confirmed compatible with **Windows** (Git Bash / WSL) and **Linux**. Run in a bash terminal — not PowerShell or CMD:
+
+```bash
+bash scripts/build-vsix.sh
+# → outputs eco-api-analyzer-*.vsix in extension/
+
+# Install
+code --install-extension eco-api-analyzer-*.vsix
+# or: Ctrl+Shift+P → "Extensions: Install from VSIX..."
+```
+
+One-liner after dependencies are already installed:
+```bash
+npm run build && npm run package
+```
+
 ## Dev Setup
 
 ```bash

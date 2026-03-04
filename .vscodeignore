@@ -2,3 +2,6 @@
 !dist/**
 !dashboard-dist/**
 !package.json
+!README.md
+!LICENSE
+!media/**
