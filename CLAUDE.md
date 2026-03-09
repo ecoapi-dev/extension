@@ -62,7 +62,6 @@ dashboard/                # React SPA (full dashboard)
   package.json
 dashboard-dist/           # Built dashboard (output of npm run build:dashboard)
 scripts/
-  install-dashboard.sh    # Install dashboard npm deps
   start-extension.sh      # Full dev setup (install + build + open VSCode)
 esbuild.mjs               # esbuild config for extension + webview
 package.json

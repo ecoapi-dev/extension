@@ -55,7 +55,6 @@ dashboard-dist/             # Built dashboard (generated — do not edit)
 scripts/
   build-vsix.sh             # Build & package as .vsix (run in bash)
   start-extension.sh        # Full dev setup (F5 workflow)
-  install-dashboard.sh
 ```
 
 ## Install from .vsix (recommended)
