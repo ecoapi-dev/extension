@@ -50,7 +50,7 @@ html, body, #root {
   right: 10px;
   bottom: 0;
   height: 2px;
-  background: var(--vscode-tab-activeBorderTop, var(--vscode-focusBorder));
+  background: #4caf50;
   transform: scaleX(0);
   transform-origin: center;
   transition: transform 220ms var(--eco-ease-emphasis);
@@ -394,6 +394,31 @@ html, body, #root {
   text-transform: uppercase;
 }
 
+/* ─── Chat input icon buttons ─── */
+
+.eco-chat-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.eco-chat-send-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+}
+
+.eco-chat-icon-btn .codicon {
+  color: #ffffff;
+}
+
 .eco-scroll-invisible {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -405,7 +430,7 @@ html, body, #root {
 }
 
 .eco-thinking {
-  color: var(--vscode-descriptionForeground);
+  color: #4caf50;
   font-size: var(--vscode-font-size);
   display: inline-flex;
   align-items: center;

@@ -38,7 +38,7 @@ export function ScanningPage({ files, currentIndex, endpointCount, total, error 
           <div
             style={{
               height: "100%",
-              background: "var(--vscode-progressBar-background)",
+              background: "#4caf50",
               width: `${progress}%`,
               transition: "width 0.3s ease",
             }}

@@ -46,14 +46,18 @@ export function LandingPage({ onStartScan }: LandingPageProps) {
         <button
           className="eco-btn-primary"
           onClick={onStartScan}
-          style={{ flex: 1, justifyContent: "center", height: "34px", padding: "0 12px", whiteSpace: "nowrap" }}
+          style={{ flex: 1, justifyContent: "center", height: "34px", padding: "0 12px", whiteSpace: "nowrap", background: "#2e7d32", borderRadius: "8px", border: "none" }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#388e3c"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#2e7d32"; }}
         >
           Scan Workspace
         </button>
         <button
           className="eco-btn-primary"
           onClick={() => postMessage({ type: "openDashboard" })}
-          style={{ flex: 1, justifyContent: "center", height: "34px", padding: "0 12px", whiteSpace: "nowrap" }}
+          style={{ flex: 1, justifyContent: "center", height: "34px", padding: "0 12px", whiteSpace: "nowrap", background: "#2e7d32", borderRadius: "8px", border: "none" }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#388e3c"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#2e7d32"; }}
         >
           Open Dashboard
         </button>
