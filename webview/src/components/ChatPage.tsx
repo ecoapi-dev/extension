@@ -98,6 +98,7 @@ export function ChatPage({ context }: ChatPageProps) {
   const [streamingContent, setStreamingContent] = useState("");
   const [model, setModel] = useState(getSavedModel);
   const [appliedFixKeys, setAppliedFixKeys] = useState<Set<string>>(new Set());
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
 
   // Onboarding state
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -111,6 +112,7 @@ export function ChatPage({ context }: ChatPageProps) {
   const autoSentContextRef = useRef<SuggestionContext | null>(null);
   const contextRef = useRef<SuggestionContext | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
   // Text of a message that was sent but bounced back with needsApiKey
   const pendingMessageRef = useRef<string | null>(null);
   // Whether the pending message is already in the messages list
@@ -230,6 +232,18 @@ export function ChatPage({ context }: ChatPageProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading, streamingContent]);
+
+  // Close model dropdown on outside click
+  useEffect(() => {
+    if (!showModelDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
+        setShowModelDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showModelDropdown]);
 
   // Send a chat request, optionally adding the user message to the UI first
   const sendChatRequest = (text: string, addToUI = true) => {
@@ -418,8 +432,8 @@ export function ChatPage({ context }: ChatPageProps) {
               {msg.role === "user" ? (
                 <div
                   style={{
-                    background: "var(--vscode-button-background)",
-                    color: "var(--vscode-button-foreground)",
+                    background: "#2e7d32",
+                    color: "#ffffff",
                     padding: "8px 12px",
                     borderRadius: "12px 12px 0 12px",
                     maxWidth: "85%",
@@ -485,20 +499,14 @@ export function ChatPage({ context }: ChatPageProps) {
                   <Markdown content={streamingContent} />
                 </div>
               ) : (
-                isGptModel(model) ? (
-                  <span style={{ color: "var(--vscode-descriptionForeground)", fontSize: "var(--vscode-font-size)" }}>
-                    ...
+                <div className="eco-thinking" aria-live="polite">
+                  Thinking
+                  <span className="eco-thinking-dots">
+                    <span>.</span>
+                    <span>.</span>
+                    <span>.</span>
                   </span>
-                ) : (
-                  <div className="eco-thinking" aria-live="polite">
-                    Thinking
-                    <span className="eco-thinking-dots">
-                      <span>.</span>
-                      <span>.</span>
-                      <span>.</span>
-                    </span>
-                  </div>
-                )
+                </div>
               )}
             </div>
           )}
@@ -507,87 +515,179 @@ export function ChatPage({ context }: ChatPageProps) {
         </div>
       )}
 
-      {/* Input row ??hidden while onboarding */}
+      {/* Input box — hidden while onboarding */}
       {!showOnboarding && (
         <div
           style={{
             padding: "8px 12px",
             borderTop: "1px solid var(--vscode-panel-border)",
             flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
           }}
         >
-          <textarea
-            ref={textareaRef}
-            className="eco-input"
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a follow-up..."
-            disabled={isLoading}
-            rows={1}
+          <div
             style={{
-              flex: 1,
-              opacity: isLoading ? 0.5 : 1,
-              lineHeight: 1.5,
-              minHeight: "28px",
-              padding: "4px 8px",
-            }}
-          />
-          <select
-            value={model}
-            onChange={handleModelChange}
-            disabled={isLoading}
-            title="Select model"
-            style={{
-              background: "var(--vscode-dropdown-background)",
-              color: "var(--vscode-dropdown-foreground)",
-              border: "1px solid var(--vscode-dropdown-border, var(--vscode-input-border))",
-              borderRadius: "3px",
-              padding: "0 6px",
-              height: "28px",
-              fontSize: "11px",
-              fontFamily: "var(--vscode-font-family)",
-              flexShrink: 0,
-              cursor: isLoading ? "not-allowed" : "pointer",
-              opacity: isLoading ? 0.5 : 1,
-              outline: "none",
-              maxWidth: "120px",
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "flex-end",
+              gap: "4px",
+              background: "var(--vscode-input-background)",
+              border: "1.5px solid #4caf50",
+              borderRadius: "10px",
+              padding: "6px 6px 6px 10px",
+              opacity: isLoading ? 0.6 : 1,
+              position: "relative",
             }}
           >
-            {MODEL_GROUPS.map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {group.models.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <button
-            onClick={handleSend}
-            disabled={isLoading || !input.trim()}
-            title="Send"
-            style={{
-              flexShrink: 0,
-              minWidth: "62px",
-              height: "28px",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "5px",
-              background: "var(--vscode-button-background)",
-              border: "1px solid var(--vscode-button-border, transparent)",
-              borderRadius: "3px",
-              cursor: isLoading || !input.trim() ? "default" : "pointer",
-              padding: "4px 10px",
-              color: "var(--vscode-button-foreground)",
-              opacity: input.trim() && !isLoading ? 1 : 0.45,
-            }}
-          >
-            <span style={{ fontSize: "11px" }}>Send</span>
-          </button>
+            {/* Textarea */}
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask a follow-up..."
+              disabled={isLoading}
+              rows={1}
+              style={{
+                flex: 1,
+                background: "transparent",
+                color: "var(--vscode-input-foreground)",
+                border: "none",
+                outline: "none",
+                resize: "none",
+                fontFamily: "var(--vscode-font-family)",
+                fontSize: "var(--vscode-font-size)",
+                lineHeight: 1.5,
+                minHeight: "22px",
+                padding: 0,
+              }}
+            />
+
+            {/* Model selector */}
+            <div ref={modelDropdownRef} style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                className="eco-chat-icon-btn"
+                onClick={() => !isLoading && setShowModelDropdown((v) => !v)}
+                title="Select model"
+                style={{
+                  background: showModelDropdown ? "rgba(76,175,80,0.25)" : "transparent",
+                  cursor: isLoading ? "not-allowed" : "pointer",
+                  opacity: isLoading ? 0.4 : 1,
+                  color: "#ffffff",
+                }}
+                onMouseEnter={(e) => { if (!isLoading) (e.currentTarget as HTMLButtonElement).style.background = "rgba(76,175,80,0.25)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = showModelDropdown ? "rgba(76,175,80,0.25)" : "transparent"; }}
+              >
+                {/* Robot/model icon */}
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M8 1a1.5 1.5 0 0 1 1.5 1.5V3h2A1.5 1.5 0 0 1 13 4.5v7A1.5 1.5 0 0 1 11.5 13h-7A1.5 1.5 0 0 1 3 11.5v-7A1.5 1.5 0 0 1 4.5 3h2v-.5A1.5 1.5 0 0 1 8 1zm0 1a.5.5 0 0 0-.5.5V3h1v-.5A.5.5 0 0 0 8 2zM5.75 7a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm4.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM6 10.5a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1H6z"/>
+                </svg>
+                {/* Chevron */}
+                <svg
+                  width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ transform: showModelDropdown ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 150ms ease" }}
+                >
+                  <polyline points="3,11 8,5 13,11" />
+                </svg>
+              </button>
+
+              {showModelDropdown && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "calc(100% + 8px)",
+                    right: 0,
+                    background: "var(--vscode-dropdown-background, var(--vscode-editor-background))",
+                    border: "1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))",
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+                    minWidth: "160px",
+                    zIndex: 100,
+                    overflow: "hidden",
+                    padding: "4px 0",
+                  }}
+                >
+                  {MODEL_GROUPS.map((group, gi) => (
+                    <div key={group.label}>
+                      {gi > 0 && (
+                        <div style={{ height: "1px", background: "var(--vscode-panel-border)", margin: "3px 0" }} />
+                      )}
+                      <div
+                        style={{
+                          padding: "4px 10px 2px",
+                          fontSize: "10px",
+                          fontWeight: 600,
+                          color: "var(--vscode-descriptionForeground)",
+                          letterSpacing: "0.05em",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {group.label}
+                      </div>
+                      {group.models.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            handleModelChange({ target: { value: m.id } } as React.ChangeEvent<HTMLSelectElement>);
+                            setShowModelDropdown(false);
+                          }}
+                          onMouseEnter={(e) => {
+                            if (model !== m.id) {
+                              (e.currentTarget as HTMLButtonElement).style.background = "var(--vscode-list-hoverBackground)";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (model !== m.id) {
+                              (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                            }
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            width: "100%",
+                            padding: "5px 10px",
+                            background: model === m.id ? "rgba(0,0,0,0.25)" : "transparent",
+                            color: "var(--vscode-foreground)",
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontFamily: "var(--vscode-font-family)",
+                            textAlign: "left",
+                            transition: "background 120ms ease",
+                          }}
+                        >
+                          {model === m.id
+                            ? <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="2,9 6,13 14,3" /></svg>
+                            : <span style={{ display: "inline-block", width: "11px", flexShrink: 0 }} />
+                          }
+                          <span>{m.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Send button — no disabled attr to avoid VSCode webview CSS hiding it */}
+            <button
+              className="eco-chat-icon-btn"
+              onClick={handleSend}
+              title="Send (Enter)"
+              style={{
+                flexShrink: 0,
+                background: "#4caf50",
+                cursor: isLoading || !input.trim() ? "default" : "pointer",
+                opacity: isLoading || !input.trim() ? 0.45 : 1,
+                color: "#ffffff",
+              }}
+            >
+              {/* Arrow with stem */}
+              <svg width="14" height="14" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
+                <polygon points="1,5 7,5 7,2 11,6 7,10 7,7 1,7" fill="#ffffff" />
+              </svg>
+            </button>
+          </div>
         </div>
       )}
     </div>
