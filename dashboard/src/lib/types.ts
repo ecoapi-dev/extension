@@ -164,3 +164,66 @@ export interface PaginationMeta {
   hasNext: boolean;
   hasPrev: boolean;
 }
+
+// ─── Simulator types ──────────────────────────────────────────────────────────
+
+export type InputMode = "user-centric" | "volume-centric";
+
+export interface SimulatorInput {
+  mode: InputMode;
+  dau?: number;
+  callsPerUserPerDay?: number;
+  totalCallsPerDay?: number;
+  frequencyOverrides?: Record<string, number>;
+}
+
+export type ConfidenceLevel = "low" | "medium" | "high";
+
+export interface CostRange {
+  low: number;
+  mid: number;
+  high: number;
+}
+
+export interface EndpointSimResult {
+  endpointId: string;
+  provider: string;
+  method: string;
+  url: string;
+  scaledCallsPerDay: number;
+  dailyCost: CostRange;
+  monthlyCost: CostRange;
+  percentOfTotal: number;
+}
+
+export interface ProviderSimResult {
+  provider: string;
+  endpoints: EndpointSimResult[];
+  dailyCost: CostRange;
+  monthlyCost: CostRange;
+  percentOfTotal: number;
+}
+
+export interface SimulatorResult {
+  input: SimulatorInput;
+  totalDailyCost: CostRange;
+  totalMonthlyCost: CostRange;
+  byProvider: ProviderSimResult[];
+  confidence: ConfidenceLevel;
+  computedAt: string;
+}
+
+export interface SavedScenario {
+  id: string;
+  label: string;
+  input: SimulatorInput;
+  result: SimulatorResult;
+  createdAt: string;
+}
+
+export const SCALE_PRESETS = [
+  { label: "1K", dau: 1_000, volume: 1_000 },
+  { label: "10K", dau: 10_000, volume: 10_000 },
+  { label: "50K", dau: 50_000, volume: 100_000 },
+  { label: "100K", dau: 100_000, volume: 1_000_000 },
+] as const;

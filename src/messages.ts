@@ -1,4 +1,5 @@
 import type { EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
+import type { SimulatorInput, SimulatorResult } from "./simulator/types";
 
 // Webview -> Host messages
 export type WebviewMessage =
@@ -9,7 +10,8 @@ export type WebviewMessage =
   | { type: "setApiKey"; key: string }
   | { type: "modelChanged"; model: string }
   | { type: "applyFix"; code: string; file: string; line?: number }
-  | { type: "openFile"; file: string; line?: number };
+  | { type: "openFile"; file: string; line?: number }
+  | { type: "runSimulation"; input: SimulatorInput };
 
 export interface SuggestionContext {
   type: string;
@@ -38,4 +40,6 @@ export type HostMessage =
   | { type: "apiKeyStored" }
   | { type: "apiKeyError"; message: string }
   | { type: "apiKeyCleared" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "simulationResult"; result: SimulatorResult }
+  | { type: "simulationError"; message: string };

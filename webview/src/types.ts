@@ -61,6 +61,61 @@ export interface SuggestionContext {
   targetLine?: number;
 }
 
+// ─── Simulator types (mirrors src/simulator/types.ts) ─────────────────────────
+
+export type InputMode = "user-centric" | "volume-centric";
+
+export interface SimulatorInput {
+  mode: InputMode;
+  dau?: number;
+  callsPerUserPerDay?: number;
+  totalCallsPerDay?: number;
+  frequencyOverrides?: Record<string, number>;
+}
+
+export type ConfidenceLevel = "low" | "medium" | "high";
+
+export interface CostRange {
+  low: number;
+  mid: number;
+  high: number;
+}
+
+export interface EndpointSimResult {
+  endpointId: string;
+  provider: string;
+  method: string;
+  url: string;
+  scaledCallsPerDay: number;
+  dailyCost: CostRange;
+  monthlyCost: CostRange;
+  percentOfTotal: number;
+}
+
+export interface ProviderSimResult {
+  provider: string;
+  endpoints: EndpointSimResult[];
+  dailyCost: CostRange;
+  monthlyCost: CostRange;
+  percentOfTotal: number;
+}
+
+export interface SimulatorResult {
+  input: SimulatorInput;
+  totalDailyCost: CostRange;
+  totalMonthlyCost: CostRange;
+  byProvider: ProviderSimResult[];
+  confidence: ConfidenceLevel;
+  computedAt: string;
+}
+
+export const SCALE_PRESETS = [
+  { label: "1K", dau: 1_000, volume: 1_000 },
+  { label: "10K", dau: 10_000, volume: 10_000 },
+  { label: "50K", dau: 50_000, volume: 100_000 },
+  { label: "100K", dau: 100_000, volume: 1_000_000 },
+] as const;
+
 // Host -> Webview messages
 export type HostMessage =
   | { type: "triggerScan" }
@@ -77,4 +132,6 @@ export type HostMessage =
   | { type: "apiKeyStored" }
   | { type: "apiKeyError"; message: string }
   | { type: "apiKeyCleared" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "simulationResult"; result: SimulatorResult }
+  | { type: "simulationError"; message: string };

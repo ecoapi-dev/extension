@@ -26,6 +26,11 @@ src/
   scanner/
     patterns.ts           # API call detection regex patterns
     workspace-scanner.ts  # Workspace file scanner
+  simulator/              # Cost Simulator computation layer
+    types.ts              # SimulatorInput, SimulatorResult, SavedScenario, etc.
+    engine.ts             # Pure runSimulation() function (no side effects)
+    static-source.ts      # StaticDataSource adapter (EndpointRecord[] → SimulatorDataSource)
+    index.ts              # Barrel re-export
 webview/                  # React sidebar UI
   src/
     App.tsx
@@ -37,6 +42,7 @@ webview/                  # React sidebar UI
       ScanningPage.tsx
       ResultsPage.tsx
       ChatPage.tsx
+      SimulatePage.tsx    # Cost Simulator tab (Simulate tab in results)
       Markdown.tsx
       LeafIcon.tsx
     styles/
@@ -47,6 +53,7 @@ dashboard/                # React SPA (full dashboard)
     theme-context.tsx
     themes.ts
     components/
+      ScenarioCompare.tsx # Side-by-side scenario comparison modal
     layout/
     lib/
       api.ts              # REST client
@@ -57,6 +64,7 @@ dashboard/                # React SPA (full dashboard)
       Endpoints.tsx
       Graph.tsx
       Suggestions.tsx
+      Simulator.tsx       # Cost Simulator page with scenario management
     styles/
   vite.config.ts
   package.json
@@ -118,6 +126,16 @@ Then press **F5** in VSCode to launch the Extension Development Host.
 - The workspace scanner (`workspace-scanner.ts`) uses regex patterns from `patterns.ts` to detect API calls across supported file types
 - AI review is optional: prompts live in `chat/prompts.ts`, calls go through `openai` SDK; key is stored in VSCode SecretStorage
 - `dashboard-dist/` must exist (built) before the extension can serve the dashboard — `build:dashboard` handles this
+
+### Cost Simulator
+
+The Cost Simulator (`src/simulator/`) is a pure computation layer (no Node/browser/VSCode deps) that projects API costs at scale:
+
+- **Engine** (`engine.ts`): `runSimulation(dataSource, input)` scales each endpoint proportionally, applies ±30% uncertainty range, groups by provider
+- **Data source abstraction** (`SimulatorDataSource` interface): allows static scan data (v1) or future live telemetry to be swapped in without UI changes
+- **VS Code sidebar**: "Simulate" tab in `ResultsPage`, rendered by `SimulatePage.tsx`. Sends `runSimulation` IPC message; receives `simulationResult`
+- **Dashboard**: `/simulator` route with full scenario management (save, compare 2, export CSV). Simulator API routes on local server: `POST /api/projects/local/simulator/run`, `GET/POST/DELETE /api/projects/local/simulator/scenarios`, `GET /api/projects/local/simulator/scenarios/export`
+- **Scenario persistence**: Saved scenarios stored in `vscode.globalState` under `eco.simulatorScenarios`, passed to local server via `onScenariosChanged` callback
 
 ## VSCode Settings
 

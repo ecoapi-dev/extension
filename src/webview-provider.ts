@@ -6,6 +6,8 @@ import { buildSystemPrompt } from "./chat/prompts";
 import { LocalServer } from "./local-server";
 import type { WebviewMessage, HostMessage } from "./messages";
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
+import { runSimulation, StaticDataSource } from "./simulator";
+import type { SimulatorInput } from "./simulator/types";
 
 const MODELS = {
   "gpt-4o-mini": { id: "gpt-4o-mini", name: "GPT-4o Mini" },
@@ -441,6 +443,9 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
   private lastSummary: ScanSummary | null = null;
   private projectId: string | null = null;
 
+  // Simulator state (persisted across sessions)
+  private savedScenarios: import("./simulator/types").SavedScenario[] = [];
+
   // Local dashboard server
   private localServer: LocalServer | null = null;
 
@@ -452,6 +457,7 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
     this.context = context;
     this.outputChannel = vscode.window.createOutputChannel("ECO AI Review");
     this.context.subscriptions.push(this.outputChannel);
+    this.savedScenarios = (this.context.globalState.get<import("./simulator/types").SavedScenario[]>("eco.simulatorScenarios")) ?? [];
   }
 
   resolveWebviewView(
@@ -526,6 +532,24 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
       case "openDashboard":
         await this.handleOpenDashboard();
         break;
+      case "runSimulation":
+        this.handleRunSimulation(message.input);
+        break;
+    }
+  }
+
+  private handleRunSimulation(input: SimulatorInput): void {
+    try {
+      if (this.lastEndpoints.length === 0) {
+        this.postMessage({ type: "simulationError", message: "Run a scan first to use the simulator." });
+        return;
+      }
+      const source = new StaticDataSource(this.lastEndpoints);
+      const result = runSimulation(source, input);
+      this.postMessage({ type: "simulationResult", result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Simulation failed";
+      this.postMessage({ type: "simulationError", message });
     }
   }
 
@@ -1356,6 +1380,11 @@ export class EcoSidebarProvider implements vscode.WebviewViewProvider {
           suggestions: this.lastSuggestions,
           summary: this.lastSummary,
           workspaceName: this.getWorkspaceName(),
+          scenarios: this.savedScenarios,
+          onScenariosChanged: (scenarios) => {
+            this.savedScenarios = scenarios;
+            void this.context.globalState.update("eco.simulatorScenarios", scenarios);
+          },
         }));
       }
 

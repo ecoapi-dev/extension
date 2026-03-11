@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Endpoints from './pages/Endpoints';
 import Suggestions from './pages/Suggestions';
 import Graph from './pages/Graph';
+import Simulator from './pages/Simulator';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
       { path: 'endpoints', Component: Endpoints },
       { path: 'suggestions', Component: Suggestions },
       { path: 'graph', Component: Graph },
+      { path: 'simulator', Component: Simulator },
     ],
   },
 ]);

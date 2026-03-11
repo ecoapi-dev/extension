@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Markdown } from "./Markdown";
 import { ChatPage } from "./ChatPage";
+import { SimulatePage } from "./SimulatePage";
 import type { Suggestion, ScanSummary, SuggestionContext, EndpointRecord } from "../types";
 import { postMessage } from "../vscode";
 
@@ -15,7 +16,7 @@ interface ResultsPageProps {
   aiReviewStats: { added: number; filtered: number } | null;
 }
 
-type Tab = "findings" | "chat";
+type Tab = "findings" | "chat" | "simulate";
 
 const typeLabels: Record<string, string> = {
   n_plus_one: "n+1",
@@ -475,6 +476,12 @@ export function ResultsPage({
           Chat
         </button>
         <button
+          className={`eco-tab${tab === "simulate" ? " active" : ""}`}
+          onClick={() => setTab("simulate")}
+        >
+          Simulate
+        </button>
+        <button
           className="eco-btn-icon"
           onClick={onRunAiReview}
           disabled={aiReviewRunning}
@@ -601,6 +608,10 @@ export function ResultsPage({
 
       <div className="eco-panel-view" style={{ flex: 1, display: tab === "chat" ? "flex" : "none", flexDirection: "column", minHeight: 0 }}>
         <ChatPage context={chatContext} />
+      </div>
+
+      <div className="eco-panel-view" style={{ flex: 1, display: tab === "simulate" ? "flex" : "none", flexDirection: "column", minHeight: 0 }}>
+        <SimulatePage endpoints={endpoints} />
       </div>
     </div>
   );

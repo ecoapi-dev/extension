@@ -3,6 +3,8 @@ import * as fs from "fs";
 import * as path from "path";
 
 import type { EndpointRecord, Suggestion, ScanSummary, GraphData, GraphNode, GraphEdge } from "./analysis/types";
+import { runSimulation, StaticDataSource } from "./simulator";
+import type { SimulatorInput, SavedScenario } from "./simulator/types";
 
 interface PaginationMeta {
   page: number;
@@ -18,6 +20,8 @@ export interface LocalServerData {
   suggestions: Suggestion[];
   summary: ScanSummary | null;
   workspaceName: string;
+  scenarios: SavedScenario[];
+  onScenariosChanged?: (scenarios: SavedScenario[]) => void;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -163,7 +167,8 @@ export class LocalServer {
 
   private setCors(res: http.ServerResponse): void {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   }
 
@@ -187,13 +192,30 @@ export class LocalServer {
 
     if (pathname === "/api/projects" || pathname.startsWith("/api/projects/")) {
       const apiPath = pathname.slice("/api".length);
-      if (this.handleApiRoute(apiPath, parsed.searchParams, res)) return;
+      const method = req.method ?? "GET";
+      if (method === "POST" || method === "DELETE") {
+        this.readBody(req).then((body) => {
+          if (!this.handleApiRoute(apiPath, parsed.searchParams, res, method, body)) {
+            this.serveStatic(pathname, res);
+          }
+        });
+        return;
+      }
+      if (this.handleApiRoute(apiPath, parsed.searchParams, res, method, "")) return;
     }
 
     this.serveStatic(pathname, res);
   }
 
-  private handleApiRoute(pathname: string, params: URLSearchParams, res: http.ServerResponse): boolean {
+  private readBody(req: http.IncomingMessage): Promise<string> {
+    return new Promise((resolve) => {
+      let data = "";
+      req.on("data", (chunk: Buffer) => { data += chunk.toString(); });
+      req.on("end", () => resolve(data));
+    });
+  }
+
+  private handleApiRoute(pathname: string, params: URLSearchParams, res: http.ServerResponse, method = "GET", body = ""): boolean {
     const { endpoints, suggestions, summary, workspaceName } = this.getData();
 
     if (pathname === "/projects") {
@@ -387,6 +409,82 @@ export class LocalServer {
       }
       const providerCosts = [...byProvider.values()].sort((a, b) => b.monthlyCost - a.monthlyCost);
       this.sendJson(res, { data: providerCosts, pagination: makePagination(providerCosts.length) });
+      return true;
+    }
+
+    // ─── Simulator routes ─────────────────────────────────────────────────────
+
+    if (pathname === "/projects/local/simulator/run" && method === "POST") {
+      try {
+        const input = (JSON.parse(body).data ?? JSON.parse(body)) as SimulatorInput;
+        const source = new StaticDataSource(endpoints);
+        const result = runSimulation(source, input);
+        this.sendJson(res, { data: result });
+      } catch {
+        this.sendJson(res, { error: "Failed to run simulation" });
+      }
+      return true;
+    }
+
+    if (pathname === "/projects/local/simulator/scenarios" && method === "GET") {
+      const data = this.getData();
+      this.sendJson(res, { data: data.scenarios, pagination: makePagination(data.scenarios.length) });
+      return true;
+    }
+
+    if (pathname === "/projects/local/simulator/scenarios" && method === "POST") {
+      try {
+        const parsed = JSON.parse(body);
+        const payload = parsed.data ?? parsed;
+        const { label, input, result } = payload as { label: string; input: SimulatorInput; result: import("./simulator/types").SimulatorResult };
+        const scenario: SavedScenario = {
+          id: `scenario-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          label,
+          input,
+          result,
+          createdAt: new Date().toISOString(),
+        };
+        const data = this.getData();
+        data.scenarios.push(scenario);
+        data.onScenariosChanged?.(data.scenarios);
+        this.sendJson(res, { data: scenario });
+      } catch {
+        this.sendJson(res, { error: "Failed to save scenario" });
+      }
+      return true;
+    }
+
+    const scenarioDeleteMatch = pathname.match(/^\/projects\/local\/simulator\/scenarios\/([^/]+)$/);
+    if (scenarioDeleteMatch && method === "DELETE") {
+      const id = scenarioDeleteMatch[1];
+      const data = this.getData();
+      const idx = data.scenarios.findIndex((s) => s.id === id);
+      if (idx !== -1) {
+        data.scenarios.splice(idx, 1);
+        data.onScenariosChanged?.(data.scenarios);
+      }
+      this.sendJson(res, { data: { deleted: id } });
+      return true;
+    }
+
+    if (pathname === "/projects/local/simulator/scenarios/export" && method === "GET") {
+      const data = this.getData();
+      const ids = params.get("ids")?.split(",").filter(Boolean) ?? [];
+      const toExport = ids.length > 0
+        ? data.scenarios.filter((s) => ids.includes(s.id))
+        : data.scenarios;
+      const rows = toExport.map((s) => {
+        const totalLow = s.result.totalMonthlyCost.low.toFixed(2);
+        const totalMid = s.result.totalMonthlyCost.mid.toFixed(2);
+        const totalHigh = s.result.totalMonthlyCost.high.toFixed(2);
+        return `"${s.label.replace(/"/g, '""')}","${s.createdAt}","${totalLow}","${totalMid}","${totalHigh}"`;
+      });
+      const csv = ["Label,Created At,Monthly Low ($),Monthly Mid ($),Monthly High ($)", ...rows].join("\n");
+      this.setCors(res);
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=eco-scenarios.csv");
+      res.writeHead(200);
+      res.end(csv);
       return true;
     }
 

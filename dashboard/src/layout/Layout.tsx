@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useParams } from 'react-router';
-import { LayoutDashboard, Radio, Lightbulb, Share2, Settings, Leaf } from 'lucide-react';
+import { LayoutDashboard, Radio, Lightbulb, Share2, Settings, Leaf, Calculator } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 import { useProject } from '@/lib/queries';
 import { ThemeProvider } from '../theme-context';
@@ -19,6 +19,7 @@ export function Layout() {
     { icon: Radio, path: `${base}/endpoints`, label: 'Endpoints' },
     { icon: Lightbulb, path: `${base}/suggestions`, label: 'Suggestions' },
     { icon: Share2, path: `${base}/graph`, label: 'Graph' },
+    { icon: Calculator, path: `${base}/simulator`, label: 'Simulator' },
   ];
 
   const checkActive = (path: string) => {
@@ -26,7 +27,7 @@ export function Layout() {
     return location.pathname.startsWith(path);
   };
 
-  const minimalBgPaths = ['', '/endpoints', '/suggestions', '/graph'];
+  const minimalBgPaths = ['', '/endpoints', '/suggestions', '/graph', '/simulator'];
   const pathSuffix = projectId ? (location.pathname.replace(new RegExp(`^/projects/${projectId}`), '') || '').replace(/\/$/, '') || '' : '';
   const useMinimalBg = minimalBgPaths.includes(pathSuffix);
 

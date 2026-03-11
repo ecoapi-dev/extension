@@ -13,6 +13,9 @@ import type {
   ProviderCost,
   SustainabilityData,
   PaginationMeta,
+  SimulatorInput,
+  SimulatorResult,
+  SavedScenario,
 } from "./types";
 
 // ── Projects ──
@@ -181,5 +184,43 @@ export function useGraph(projectId: string | undefined, clusterBy?: string) {
         cluster_by: clusterBy,
       }),
     enabled: !!projectId,
+  });
+}
+
+// ── Simulator ──
+
+export function useRunSimulation(projectId: string | undefined) {
+  return useMutation({
+    mutationFn: (input: SimulatorInput) =>
+      post<{ data: SimulatorResult }>(`/projects/${projectId}/simulator/run`, input),
+  });
+}
+
+export function useScenarios(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ["scenarios", projectId],
+    queryFn: () =>
+      get<{ data: SavedScenario[]; pagination: PaginationMeta }>(
+        `/projects/${projectId}/simulator/scenarios`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useSaveScenario(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { label: string; input: SimulatorInput; result: SimulatorResult }) =>
+      post<{ data: SavedScenario }>(`/projects/${projectId}/simulator/scenarios`, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["scenarios", projectId] }),
+  });
+}
+
+export function useDeleteScenario(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (scenarioId: string) =>
+      del(`/projects/${projectId}/simulator/scenarios/${scenarioId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["scenarios", projectId] }),
   });
 }
