@@ -206,6 +206,7 @@ export default function Simulator() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [showCompare, setShowCompare] = useState(false);
+  const [exportWarning, setExportWarning] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const buildInput = useCallback((): SimulatorInput => {
@@ -262,9 +263,17 @@ export default function Simulator() {
     });
   }
 
+  useEffect(() => {
+    if (compareIds.length > 0) setExportWarning(false);
+  }, [compareIds]);
+
   function handleExport() {
-    const ids = compareIds.length > 0 ? compareIds.join(',') : '';
-    const url = `/api/projects/${projectId}/simulator/scenarios/export${ids ? `?ids=${ids}` : ''}`;
+    if (compareIds.length === 0) {
+      setExportWarning(true);
+      return;
+    }
+    setExportWarning(false);
+    const url = `/api/projects/${projectId}/simulator/scenarios/export?ids=${compareIds.join(',')}`;
     const a = document.createElement('a');
     a.href = url;
     a.download = 'eco-scenarios.csv';
@@ -511,13 +520,18 @@ export default function Simulator() {
                 <p className="text-[11px] text-white/40 mt-0.5">Select up to 2 to compare</p>
               </div>
               {scenarios.length > 0 && (
-                <button
-                  onClick={handleExport}
-                  className="flex items-center gap-1.5 text-[11px] text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/[0.08] hover:border-white/20"
-                >
-                  <Download size={12} />
-                  Export CSV
-                </button>
+                <div className="flex flex-col items-end gap-1">
+                  <button
+                    onClick={handleExport}
+                    className="flex items-center gap-1.5 text-[11px] text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/[0.08] hover:border-white/20"
+                  >
+                    <Download size={12} />
+                    Export CSV
+                  </button>
+                  {exportWarning && (
+                    <p className="text-[11px] text-[#C45A4A]">Select at least one scenario to export.</p>
+                  )}
+                </div>
               )}
             </div>
 
