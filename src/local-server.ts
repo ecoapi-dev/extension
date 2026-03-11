@@ -179,6 +179,13 @@ export class LocalServer {
     res.end(JSON.stringify(data));
   }
 
+  private sendError(res: http.ServerResponse, status: number, code: string, message: string): void {
+    this.setCors(res);
+    res.setHeader("Content-Type", "application/json");
+    res.writeHead(status);
+    res.end(JSON.stringify({ error: { code, message, status } }));
+  }
+
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
     const parsed = new URL(req.url ?? "/", `http://127.0.0.1:${this._port}`);
     const pathname = parsed.pathname;
@@ -459,10 +466,12 @@ export class LocalServer {
       const id = scenarioDeleteMatch[1];
       const data = this.getData();
       const idx = data.scenarios.findIndex((s) => s.id === id);
-      if (idx !== -1) {
-        data.scenarios.splice(idx, 1);
-        data.onScenariosChanged?.(data.scenarios);
+      if (idx === -1) {
+        this.sendError(res, 404, "NOT_FOUND", `Scenario '${id}' not found`);
+        return true;
       }
+      data.scenarios.splice(idx, 1);
+      data.onScenariosChanged?.(data.scenarios);
       this.sendJson(res, { data: { deleted: id } });
       return true;
     }
