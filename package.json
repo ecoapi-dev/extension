@@ -3,6 +3,7 @@
   "displayName": "ECO - API Usage Analyzer",
   "description": "Scan your codebase for API call patterns, estimate costs, and get optimization suggestions.",
   "version": "0.1.0",
+  "license": "AGPL-3.0-only",
   "publisher": "eco",
   "icon": "media/eco-icon.png",
   "engines": {

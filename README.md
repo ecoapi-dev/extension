@@ -99,4 +99,4 @@ Full API documentation: **https://ecoapi.dev**
 
 ---
 
-Copyright © 2026 Andres Lopez, Aslan Wang, Donggyu Yoon. All rights reserved.
+Licensed under the [GNU Affero General Public License v3.0](LICENSE) © 2026 Andres Lopez, Aslan Wang, Donggyu Yoon.
