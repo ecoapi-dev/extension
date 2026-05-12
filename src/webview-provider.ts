@@ -5,22 +5,13 @@ import * as path from "path";
 import {
   scanWorkspace,
   detectLocalWastePatterns,
-  readWorkspaceFileExcerpt,
   countScopedWorkspaceFiles,
   getWorkspaceScanFiles,
 } from "./scanner/workspace-scanner";
 import { createProject, findProjectByName, submitScan, getAllEndpoints, getAllSuggestions, validateProjectId } from "./api-client";
-import { buildSystemPrompt } from "./chat/prompts";
 import {
-  buildProviderOptions,
-  executeChat,
-  findModelMetadata,
   getDefaultChatSelection,
-  getProviderAdapter,
-  ChatAdapterError,
   type ChatProviderId,
-  type NormalizedChatMessage,
-  type NormalizedChatRequest,
 } from "./chat";
 import type { WebviewMessage, HostMessage, KeyServiceId, KeyStatusSummary, ProjectIdStatusSummary } from "./messages";
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
@@ -47,47 +38,7 @@ import {
 } from "./key-management";
 import { resolveWorkspaceFilePathSafely } from "./workspace-file-access";
 import { getOutputChannel } from "./output";
-
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface AiFinding {
-  type: Suggestion["type"];
-  severity: Suggestion["severity"];
-  confidence: number;
-  description: string;
-  affectedFile: string;
-  targetLine?: number;
-  evidence: string[];
-}
-
-interface AiPromptFile {
-  path: string;
-  snippet: string;
-  startLine: number;
-  endLine: number;
-}
-
-interface AiReviewInput {
-  files: AiPromptFile[];
-  summary: ScanSummary | null;
-  endpoints: Array<{
-    id: string;
-    method: string;
-    url: string;
-    status: EndpointRecord["status"];
-    monthlyCost: number;
-    files: string[];
-  }>;
-  suggestions: Array<{
-    type: Suggestion["type"];
-    severity: Suggestion["severity"];
-    description: string;
-    affectedFiles: string[];
-  }>;
-}
+import { ChatHandler } from "./webview/chat-handler";
 
 async function resolveWorkspaceFileSafely(
   workspaceFolder: vscode.WorkspaceFolder,
@@ -676,7 +627,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
   private scenarioPersistQueue: Promise<void> = Promise.resolve();
 
   // Chat state
-  private chatHistory: ChatMessage[] = [];
+  private readonly chatHandler: ChatHandler;
   private readonly outputChannel: vscode.OutputChannel;
   private readonly keyValidationState = new Map<KeyServiceId, PersistedKeyValidationSnapshot>();
   private readonly projectIdCheckingState = new Set<string>();
@@ -749,6 +700,25 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     this.context.subscriptions.push(this.outputChannel);
     this.savedScenarios = (this.context.globalState.get<import("./simulator/types").SavedScenario[]>("recost.simulatorScenarios")) ?? [];
     this.restoreKeyValidationState();
+    this.chatHandler = new ChatHandler({
+      postMessage: (m) => this.postMessage(m),
+      outputChannel: this.outputChannel,
+      context: this.context,
+      getSelectedChatProvider: () => this.getSelectedChatProvider(),
+      getSelectedChatModel: () => this.getSelectedChatModel(),
+      getLastEndpoints: () => this.lastEndpoints,
+      getLastSuggestions: () => this.lastSuggestions,
+      getLastSummary: () => this.lastSummary,
+      getProjectId: () => this.projectId,
+      setLastSuggestions: (suggestions) => { this.lastSuggestions = suggestions; },
+      setLastSummary: (summary) => { this.lastSummary = summary; },
+      getKeyServiceIdForProvider: (providerId) => this.getKeyServiceIdForProvider(providerId),
+      getStoredProviderApiKey: (providerId) => this.getStoredProviderApiKey(providerId),
+      setValidationState: (serviceId, snapshot) => this.setValidationState(serviceId, snapshot),
+      clearValidationState: (serviceId) => this.clearValidationState(serviceId),
+      sendKeyStatusUpdate: (serviceId, focusServiceId) => this.sendKeyStatusUpdate(serviceId, focusServiceId),
+      openKeys: (focusServiceId) => this.openKeys(focusServiceId),
+    });
   }
 
   resolveWebviewView(
@@ -817,13 +787,8 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     return readStoredSecret(getKeyService(serviceId), this.context.secrets);
   }
 
-  private async sendChatConfig(providerId = this.getSelectedChatProvider(), model = this.getSelectedChatModel()) {
-    this.postMessage({
-      type: "chatConfig",
-      providers: buildProviderOptions(),
-      selectedProvider: providerId,
-      selectedModel: model,
-    });
+  private sendChatConfig(providerId?: ChatProviderId, model?: string) {
+    return this.chatHandler.sendChatConfig(providerId, model);
   }
 
   public postMessage(message: HostMessage) {
@@ -1193,7 +1158,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
   private async handleStartScan() {
     await vscode.commands.executeCommand("setContext", "recost.scanning", true);
     try {
-      this.chatHistory = [];
+      this.chatHandler.resetHistory();
       const scannedFiles = (await getWorkspaceScanFiles()).map((file) => file.relativePath);
 
       const apiCalls = await scanWorkspace((progress) => {
@@ -1462,454 +1427,8 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private logAiReview(message: string) {
-    const stamp = new Date().toISOString();
-    this.outputChannel.appendLine(`[${stamp}] ${message}`);
-  }
-
-  private getAiReviewConfig() {
-    const config = vscode.workspace.getConfiguration("recost");
-    return {
-      enabled: config.get<boolean>("aiReview.enabled", true),
-      minConfidence: config.get<number>("aiReview.minConfidence", 0.7),
-      maxFiles: config.get<number>("aiReview.maxFiles", 25),
-      maxCharsPerFile: config.get<number>("aiReview.maxCharsPerFile", 6000),
-      fallbackModel: config.get<string>("aiReview.model", "gpt-4.1-mini"),
-    };
-  }
-
-  private resolveAiReviewSelection(fallbackModel: string): { providerId: ChatProviderId; model: string } {
-    const providerId = this.getSelectedChatProvider();
-    const provider = getProviderAdapter(providerId);
-    const selectedModel = this.getSelectedChatModel();
-    if (provider.models.some((entry) => entry.id === selectedModel)) {
-      return { providerId, model: selectedModel };
-    }
-    if (providerId === "openai" && provider.models.some((entry) => entry.id === fallbackModel)) {
-      return { providerId, model: fallbackModel };
-    }
-    return { providerId, model: provider.models[0]?.id ?? fallbackModel };
-  }
-
-  private async executeAiReviewRequest(request: NormalizedChatRequest) {
-    const modelMeta = findModelMetadata(request.provider, request.model);
-    const requiresFallback = request.provider === "openai" && modelMeta?.reasoning;
-    if (!requiresFallback) {
-      return executeChat({ request, secrets: this.context.secrets });
-    }
-    try {
-      return await executeChat({ request: { ...request, stream: false }, secrets: this.context.secrets });
-    } catch (error) {
-      const chatError = error as ChatAdapterError;
-      if (chatError?.status !== 400) {
-        throw error;
-      }
-      return executeChat({
-        request: {
-          ...request,
-          stream: false,
-          messages: request.messages.filter((message) => message.role !== "system"),
-        },
-        secrets: this.context.secrets,
-      });
-    }
-  }
-
-  private redactSensitiveText(value: string): string {
-    return value
-      .replace(/sk-[a-zA-Z0-9]{16,}/g, "[REDACTED_OPENAI_KEY]")
-      .replace(/(api[_-]?key|token|secret)\s*[:=]\s*["'`][^"'`\n]{8,}["'`]/gi, "$1=[REDACTED]")
-      .replace(/(authorization\s*:\s*["'`]bearer\s+)[^"'`\n]+/gi, "$1[REDACTED]");
-  }
-
-  private async buildAiReviewInputContext(maxFiles: number, maxCharsPerFile: number): Promise<AiReviewInput> {
-    const scoreByFile = new Map<string, number>();
-    const lineHintByFile = new Map<string, number>();
-    const severityScore: Record<Suggestion["severity"], number> = { high: 4, medium: 2, low: 1 };
-
-    for (const suggestion of this.lastSuggestions) {
-      for (const file of suggestion.affectedFiles) {
-        scoreByFile.set(file, (scoreByFile.get(file) ?? 0) + severityScore[suggestion.severity]);
-        if (suggestion.targetLine && !lineHintByFile.has(file)) {
-          lineHintByFile.set(file, suggestion.targetLine);
-        }
-      }
-    }
-
-    for (const endpoint of this.lastEndpoints) {
-      const endpointScore =
-        endpoint.status === "n_plus_one_risk" || endpoint.status === "redundant" ? 4 :
-        endpoint.status === "rate_limit_risk" ? 3 :
-        endpoint.status === "cacheable" || endpoint.status === "batchable" ? 2 :
-        1;
-      for (const callSite of endpoint.callSites) {
-        scoreByFile.set(callSite.file, (scoreByFile.get(callSite.file) ?? 0) + endpointScore);
-        if (!lineHintByFile.has(callSite.file)) {
-          lineHintByFile.set(callSite.file, callSite.line);
-        }
-      }
-    }
-
-    const rankedFiles = [...scoreByFile.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, Math.max(1, maxFiles))
-      .map(([file]) => file);
-
-    const files: AiPromptFile[] = [];
-    for (let i = 0; i < rankedFiles.length; i += 1) {
-      const file = rankedFiles[i];
-      this.postMessage({
-        type: "aiReviewProgress",
-        stage: `Preparing context (${i + 1}/${rankedFiles.length})`,
-        current: i + 1,
-        total: rankedFiles.length,
-      });
-
-      const excerpt = await readWorkspaceFileExcerpt(file, {
-        centerLine: lineHintByFile.get(file),
-        contextLines: 40,
-        maxChars: maxCharsPerFile,
-      });
-      if (!excerpt || !excerpt.content.trim()) continue;
-      files.push({
-        path: file,
-        startLine: excerpt.startLine,
-        endLine: excerpt.endLine,
-        snippet: this.redactSensitiveText(excerpt.content),
-      });
-    }
-
-    return {
-      files,
-      summary: this.lastSummary,
-      endpoints: this.lastEndpoints.map((endpoint) => ({
-        id: endpoint.id,
-        method: endpoint.method,
-        url: endpoint.url,
-        status: endpoint.status,
-        monthlyCost: endpoint.monthlyCost,
-        files: endpoint.files,
-      })),
-      suggestions: this.lastSuggestions.map((suggestion) => ({
-        type: suggestion.type,
-        severity: suggestion.severity,
-        description: suggestion.description,
-        affectedFiles: suggestion.affectedFiles,
-      })),
-    };
-  }
-
-  private buildAiReviewPrompt(input: AiReviewInput): string {
-    const contract = {
-      findings: [
-        {
-          type: "cache | batch | redundancy | n_plus_one | rate_limit",
-          severity: "high | medium | low",
-          confidence: 0.0,
-          description: "short, specific finding",
-          affectedFile: "path/to/file.ts",
-          targetLine: 1,
-          evidence: ["short reason 1", "short reason 2"],
-        },
-      ],
-    };
-
-    return [
-      "You are an API efficiency code reviewer.",
-      "Analyze only the provided snippets and existing scan context.",
-      "Return ONLY valid JSON with no markdown and no extra text.",
-      "Do not invent files. Use only provided file paths.",
-      "Prefer high precision over recall.",
-      `JSON contract: ${JSON.stringify(contract)}`,
-      `Context: ${JSON.stringify(input)}`,
-    ].join("\n");
-  }
-
-  private parseAndValidateAiFindings(
-    raw: string,
-    validFiles: Set<string>,
-    minConfidence: number
-  ): { accepted: AiFinding[]; filtered: number } {
-    const allowedTypes = new Set<Suggestion["type"]>(["cache", "batch", "redundancy", "n_plus_one", "rate_limit"]);
-    const allowedSeverity = new Set<Suggestion["severity"]>(["high", "medium", "low"]);
-
-    const tryParse = (value: string): unknown => {
-      try {
-        return JSON.parse(value);
-      } catch {
-        return null;
-      }
-    };
-
-    let parsed = tryParse(raw);
-    if (!parsed) {
-      const fenced = raw.match(/```json\s*([\s\S]*?)\s*```/i) ?? raw.match(/```\s*([\s\S]*?)\s*```/i);
-      if (fenced) {
-        parsed = tryParse(fenced[1]);
-      }
-    }
-    if (!parsed) {
-      const start = raw.indexOf("{");
-      const end = raw.lastIndexOf("}");
-      if (start >= 0 && end > start) {
-        parsed = tryParse(raw.slice(start, end + 1));
-      }
-    }
-
-    const findings = (parsed as { findings?: unknown })?.findings;
-    if (!Array.isArray(findings)) {
-      return { accepted: [], filtered: 0 };
-    }
-
-    const accepted: AiFinding[] = [];
-    let filtered = 0;
-    for (const entry of findings) {
-      if (accepted.length >= 50) {
-        filtered += 1;
-        continue;
-      }
-      if (!entry || typeof entry !== "object") {
-        filtered += 1;
-        continue;
-      }
-      const candidate = entry as Record<string, unknown>;
-      const type = candidate.type;
-      const severity = candidate.severity;
-      const affectedFile = candidate.affectedFile;
-      const description = candidate.description;
-      if (
-        typeof type !== "string" ||
-        typeof severity !== "string" ||
-        typeof affectedFile !== "string" ||
-        typeof description !== "string"
-      ) {
-        filtered += 1;
-        continue;
-      }
-      if (!allowedTypes.has(type as Suggestion["type"]) || !allowedSeverity.has(severity as Suggestion["severity"])) {
-        filtered += 1;
-        continue;
-      }
-      if (!validFiles.has(affectedFile)) {
-        filtered += 1;
-        continue;
-      }
-
-      const confidence = clampConfidence(Number(candidate.confidence));
-      if (confidence < minConfidence) {
-        filtered += 1;
-        continue;
-      }
-
-      const rawLine = Number(candidate.targetLine);
-      const targetLine = Number.isFinite(rawLine) && rawLine > 0 ? Math.floor(rawLine) : undefined;
-      const evidence = Array.isArray(candidate.evidence)
-        ? candidate.evidence.filter((item): item is string => typeof item === "string").slice(0, 4).map((item) => trimText(item, 180))
-        : [];
-
-      accepted.push({
-        type: type as Suggestion["type"],
-        severity: severity as Suggestion["severity"],
-        confidence,
-        description: trimText(description.trim(), 500),
-        affectedFile,
-        targetLine,
-        evidence,
-      });
-    }
-
-    return { accepted, filtered };
-  }
-
-  private mapAiFindingToSuggestion(finding: AiFinding, index: number): Suggestion {
-    const scanId = this.lastEndpoints[0]?.scanId ?? this.projectId ?? `local-${Date.now()}`;
-    const projectId = this.lastEndpoints[0]?.projectId ?? this.projectId ?? "local";
-    const fileEndpoints = this.lastEndpoints.filter((ep) => ep.files.includes(finding.affectedFile));
-    const related = fileEndpoints.map((endpoint) => endpoint.id);
-    const closestEndpoint = findClosestEndpoint(
-      { affectedFile: finding.affectedFile, line: finding.targetLine },
-      fileEndpoints
-    );
-    const directCost = closestEndpoint?.monthlyCost ?? 0;
-    const fileMonthlyCost = fileEndpoints.reduce((sum, ep) => sum + ep.monthlyCost, 0);
-    const monthlyBaseline = directCost > 0
-      ? directCost
-      : fileMonthlyCost > 0
-      ? fileMonthlyCost
-      : 0; // unknown — no savings estimate
-
-    return {
-      id: `ai-${Date.now()}-${index + 1}`,
-      projectId,
-      scanId,
-      type: finding.type,
-      severity: finding.severity,
-      affectedEndpoints: related,
-      affectedFiles: [finding.affectedFile],
-      targetLine: finding.targetLine,
-      estimatedMonthlySavings: calculateSavings(finding.type, finding.severity, monthlyBaseline),
-      description: finding.description,
-      codeFix: "",
-      source: "ai",
-      confidence: finding.confidence,
-      evidence: finding.evidence,
-      reviewedAt: new Date().toISOString(),
-      pricingClass: classifyPricing(fileEndpoints.map((ep) => ep.costModel)),
-    };
-  }
-
-  private mergeAiSuggestions(existing: Suggestion[], incoming: Suggestion[]): { merged: Suggestion[]; added: number; filtered: number } {
-    const existingByKey = new Set<string>();
-    const deterministicOverlap = new Map<string, number[]>();
-
-    for (const suggestion of existing) {
-      const file = suggestion.affectedFiles[0] ?? "";
-      const line = suggestion.targetLine ?? 0;
-      const key = `${suggestion.type}|${file}|${line}|${normalizeDescription(suggestion.description)}`;
-      existingByKey.add(key);
-      if (file && suggestion.source !== "ai") {
-        const overlapKey = `${suggestion.type}|${file}`;
-        const lines = deterministicOverlap.get(overlapKey) ?? [];
-        lines.push(line);
-        deterministicOverlap.set(overlapKey, lines);
-      }
-    }
-
-    const aiByKey = new Set<string>();
-    const accepted: Suggestion[] = [];
-    let filtered = 0;
-
-    for (const suggestion of incoming) {
-      const file = suggestion.affectedFiles[0] ?? "";
-      const line = suggestion.targetLine ?? 0;
-      const key = `${suggestion.type}|${file}|${line}|${normalizeDescription(suggestion.description)}`;
-      if (existingByKey.has(key) || aiByKey.has(key)) {
-        filtered += 1;
-        continue;
-      }
-
-      const overlapKey = `${suggestion.type}|${file}`;
-      const overlapLines = deterministicOverlap.get(overlapKey) ?? [];
-      const nearDeterministic = overlapLines.some((knownLine) => Math.abs(knownLine - line) <= 5);
-      if (nearDeterministic) {
-        filtered += 1;
-        continue;
-      }
-
-      aiByKey.add(key);
-      accepted.push(suggestion);
-    }
-
-    return { merged: [...existing, ...accepted], added: accepted.length, filtered };
-  }
-
-  private async handleRunAiReview() {
-    const { enabled, minConfidence, maxFiles, maxCharsPerFile, fallbackModel } = this.getAiReviewConfig();
-    if (!enabled) {
-      this.postMessage({ type: "aiReviewError", message: "AI review is disabled in settings." });
-      return;
-    }
-    if (this.lastEndpoints.length === 0 && this.lastSuggestions.length === 0) {
-      this.postMessage({ type: "aiReviewError", message: "Run a scan before AI review." });
-      return;
-    }
-
-    try {
-      const { providerId, model } = this.resolveAiReviewSelection(fallbackModel);
-      const provider = getProviderAdapter(providerId);
-      this.postMessage({ type: "aiReviewProgress", stage: "Collecting files..." });
-      const input = await this.buildAiReviewInputContext(maxFiles, maxCharsPerFile);
-      if (input.files.length === 0) {
-        this.postMessage({ type: "aiReviewComplete", added: 0, filtered: 0 });
-        return;
-      }
-
-      this.postMessage({ type: "aiReviewProgress", stage: `Calling ${provider.displayName}...` });
-      const response = await this.executeAiReviewRequest({
-        provider: providerId,
-        model,
-        temperature: providerId === "recost" ? undefined : 0.1,
-        stream: false,
-        messages: [
-          {
-            role: "system",
-            content: "You are a strict API efficiency reviewer. Return only JSON.",
-          },
-          {
-            role: "user",
-            content: this.buildAiReviewPrompt(input),
-          },
-        ],
-      });
-
-      const raw = response.content ?? "";
-      this.postMessage({ type: "aiReviewProgress", stage: "Validating findings..." });
-      const validFiles = new Set(input.files.map((file) => file.path));
-      const { accepted, filtered } = this.parseAndValidateAiFindings(raw, validFiles, minConfidence);
-      const aiSuggestions = accepted.map((finding, index) => this.mapAiFindingToSuggestion(finding, index));
-      const merged = this.mergeAiSuggestions(this.lastSuggestions, aiSuggestions);
-
-      this.lastSuggestions = merged.merged;
-      const summary = this.lastSummary ?? {
-        totalEndpoints: this.lastEndpoints.length,
-        totalCallsPerDay: this.lastEndpoints.reduce((sum, endpoint) => sum + endpoint.callsPerDay, 0),
-        totalMonthlyCost: this.lastEndpoints.reduce((sum, endpoint) => sum + endpoint.monthlyCost, 0),
-        highRiskCount: 0,
-      };
-      const updatedSummary: ScanSummary = {
-        ...summary,
-        totalEndpoints: Math.max(summary.totalEndpoints, this.lastEndpoints.length),
-        highRiskCount: this.lastSuggestions.filter((suggestion) => suggestion.severity === "high").length,
-      };
-      this.lastSummary = updatedSummary;
-
-      this.logAiReview(
-        `provider=${providerId} model=${model} files=${input.files.length} raw=${accepted.length + filtered} accepted=${merged.added} filtered=${filtered + merged.filtered}`
-      );
-
-      this.postMessage({
-        type: "scanResults",
-        endpoints: this.lastEndpoints,
-        suggestions: this.lastSuggestions,
-        summary: updatedSummary,
-      });
-      this.postMessage({ type: "aiReviewComplete", added: merged.added, filtered: filtered + merged.filtered });
-    } catch (err: unknown) {
-      const chatError = err as ChatAdapterError;
-      const { providerId } = this.resolveAiReviewSelection(fallbackModel);
-      const serviceId = this.getKeyServiceIdForProvider(providerId);
-      if (chatError?.code === "bad_auth") {
-        if (serviceId) {
-          const apiKey = await this.getStoredProviderApiKey(providerId);
-          if (apiKey) {
-            await this.setValidationState(serviceId, {
-            state: "invalid",
-            message: chatError.message,
-            lastCheckedAt: new Date().toISOString(),
-              keyFingerprint: buildKeyFingerprint(apiKey),
-            });
-          } else {
-            await this.clearValidationState(serviceId);
-          }
-          await this.sendKeyStatusUpdate(serviceId, serviceId);
-        }
-        this.openKeys(serviceId);
-        this.postMessage({ type: "aiReviewError", message: chatError.message });
-        return;
-      }
-      if (chatError?.code === "missing_api_key") {
-        if (serviceId) {
-          await this.clearValidationState(serviceId);
-          await this.sendKeyStatusUpdate(serviceId, serviceId);
-        }
-        this.openKeys(serviceId);
-        this.postMessage({ type: "aiReviewError", message: chatError.message });
-        return;
-      }
-      const message = err instanceof Error ? err.message : "AI review failed";
-      this.logAiReview(`error=${message}`);
-      this.postMessage({ type: "aiReviewError", message });
-    }
+  private handleRunAiReview() {
+    return this.chatHandler.handleRunAiReview();
   }
 
   private async getOrCreateProject(rcApiKey?: string): Promise<string> {
@@ -1982,99 +1501,8 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     );
   }
 
-  private buildMessages(text: string, limitContext = false): NormalizedChatMessage[] {
-    const suggestions = limitContext ? this.lastSuggestions.slice(0, 5) : this.lastSuggestions;
-    const endpoints = limitContext ? this.lastEndpoints.slice(0, 8) : this.lastEndpoints;
-    return [
-      { role: "system", content: buildSystemPrompt(this.lastSummary, suggestions, endpoints) },
-      ...this.chatHistory,
-      { role: "user", content: text },
-    ];
-  }
-
-  private async executeProviderRequest(request: NormalizedChatRequest) {
-    return executeChat({
-      request,
-      secrets: this.context.secrets,
-      onChunk: async (chunk) => {
-        if (chunk.delta) {
-          this.postMessage({ type: "chatStreaming", chunk: chunk.delta });
-        }
-      },
-    });
-  }
-
-  private async handleChat(text: string, providerId: string, model: string) {
-    const provider = getProviderAdapter(providerId);
-    const modelMeta = findModelMetadata(providerId, model);
-    const messages = this.buildMessages(text, providerId === "recost");
-    const baseRequest: NormalizedChatRequest = {
-      provider: providerId,
-      model,
-      messages,
-      temperature: providerId === "recost" ? undefined : 0.7,
-      stream: provider.supportsStreaming && (modelMeta?.supportsStreaming ?? provider.supportsStreaming),
-    };
-
-    try {
-      let response;
-      const requiresFallback = providerId === "openai" && modelMeta?.reasoning;
-      if (requiresFallback) {
-        try {
-          response = await this.executeProviderRequest({ ...baseRequest, stream: false });
-        } catch (error) {
-          const chatError = error as ChatAdapterError;
-          if (chatError?.status === 400) {
-            response = await this.executeProviderRequest({
-              ...baseRequest,
-              stream: false,
-              messages: messages.filter((message) => message.role !== "system"),
-            });
-          } else {
-            throw error;
-          }
-        }
-      } else {
-        response = await this.executeProviderRequest(baseRequest);
-      }
-
-      this.chatHistory.push({ role: "user", content: text });
-      this.chatHistory.push({ role: "assistant", content: response.content });
-      this.postMessage({ type: "chatDone", fullContent: response.content });
-    } catch (error) {
-      const chatError = error as ChatAdapterError;
-      const serviceId = this.getKeyServiceIdForProvider(providerId);
-      if (chatError?.code === "bad_auth") {
-        if (serviceId) {
-          const apiKey = await this.getStoredProviderApiKey(providerId);
-          if (apiKey) {
-            await this.setValidationState(serviceId, {
-            state: "invalid",
-            message: chatError.message,
-            lastCheckedAt: new Date().toISOString(),
-              keyFingerprint: buildKeyFingerprint(apiKey),
-            });
-          } else {
-            await this.clearValidationState(serviceId);
-          }
-          await this.sendKeyStatusUpdate(serviceId, serviceId);
-        }
-        this.openKeys(serviceId);
-        this.postMessage({ type: "chatError", message: chatError.message });
-        return;
-      }
-      if (chatError?.code === "missing_api_key") {
-        if (serviceId) {
-          await this.clearValidationState(serviceId);
-          await this.sendKeyStatusUpdate(serviceId, serviceId);
-        }
-        this.openKeys(serviceId);
-        this.postMessage({ type: "chatError", message: chatError.message });
-        return;
-      }
-      const message = error instanceof Error ? error.message : "Network error. Check your connection.";
-      this.postMessage({ type: "chatError", message });
-    }
+  private handleChat(text: string, provider: string, model: string) {
+    return this.chatHandler.handleChat(text, provider, model);
   }
 
   private async handleApplyFix(code: string, file: string, line?: number) {
