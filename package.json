@@ -200,7 +200,7 @@
     "calibrate-detectors": "tsc -p tsconfig.scanner-tests.json && node dist-test/test/waste-calibration.js",
     "watch:ext": "node esbuild.mjs --watch",
     "watch:webview": "cd webview && npm run build -- --watch",
-    "package": "npm run build && npx @vscode/vsce package --no-dependencies --allow-missing-repository"
+    "package": "npm run build:webview && node esbuild.mjs --release && npx @vscode/vsce package --no-dependencies --allow-missing-repository"
   },
   "dependencies": {
     "openai": "^4.73.0",
