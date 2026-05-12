@@ -203,7 +203,7 @@ export function activate(context: vscode.ExtensionContext) {
       });
       const scored = scoreSnapshot(snapshot);
       const reviewClusters = buildReviewClusters(scored);
-      const compressedClusters = compressClusters(reviewClusters, snapshot);
+      const compressedClusters = await compressClusters(reviewClusters, snapshot);
       const generatorVersion = String(context.extension.packageJSON.version ?? "");
       const exportContext = buildExportContext(compressedClusters, snapshot, scored, {
         generatorVersion: generatorVersion || undefined,
