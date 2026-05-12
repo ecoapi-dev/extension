@@ -33,14 +33,16 @@ export function enclosingFunctionName(node: SyntaxNode): string | null {
     // surrounding variable_declarator. Destructure bindings
     // (`const { x } = ...`) produce object_pattern/array_pattern as child(0),
     // not identifier — those return null on purpose, since the function has no
-    // single name to attribute the call to.
+    // single name to attribute the call to. Anonymous callbacks (forEach,
+    // map, setTimeout, etc.) fall through so traversal can find an enclosing
+    // named function.
     if (current.type === "arrow_function" || current.type === "function_expression") {
       const decl = current.parent;
       if (decl?.type === "variable_declarator") {
         const lhs = decl.child(0);
         if (lhs?.type === "identifier") return lhs.text;
+        return null;
       }
-      return null;
     }
 
     current = current.parent;

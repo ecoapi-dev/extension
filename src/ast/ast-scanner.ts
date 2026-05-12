@@ -23,7 +23,6 @@ import { analyzeFrequency, frequencyToLoopContext } from "./frequency-analyzer";
 import type { SyntaxNode, Tree } from "./parser-loader";
 import type { FileReader } from "./import-resolver";
 import type { SourceSpan } from "../scanner/source-span";
-import { pointSpan } from "../scanner/source-span";
 import { enclosingFunctionName } from "./enclosing-function";
 export type { FrequencyClass } from "./frequency-analyzer";
 
@@ -497,7 +496,7 @@ export async function scanSourceWithAst(
   const seen = new Set<string>(); // dedup by "provider:chain:line"
 
   for (const callInfo of allCalls) {
-    const { methodChain, rootIdentifier, args, line, column, node } = callInfo;
+    const { methodChain, rootIdentifier, args, line, column, node, span } = callInfo;
     const frequency = analyzeFrequency(node);
     const inLoop = frequencyToLoopContext(frequency);
     const fnName = enclosingFunctionName(node);
@@ -598,7 +597,7 @@ export async function scanSourceWithAst(
                 // Override the cached class-method's enclosingFunction with the call-site's
                 // fnName: stable-IDs care about who issues the call, not which method body
                 // the template was first parsed from.
-                matches.push({ ...m, line, column, span: pointSpan(line, column), frequency, loopContext: inLoop || m.loopContext, enclosingFunction: fnName });
+                matches.push({ ...m, line, column, span, frequency, loopContext: inLoop || m.loopContext, enclosingFunction: fnName });
               }
             }
             continue;
@@ -659,7 +658,7 @@ export async function scanSourceWithAst(
 
   // ── 9. Second pass: callback / iteration patterns ───────────────────────────
   for (const callInfo of allCalls) {
-    const { methodChain, args, line, column, node } = callInfo;
+    const { methodChain, args, line, column, node, span } = callInfo;
     const parts = methodChain.split(".");
     const lastMethod = parts[parts.length - 1];
 
@@ -683,7 +682,7 @@ export async function scanSourceWithAst(
             const key = `${m.provider}:${m.methodChain}:${line}:cb`;
             if (!seen.has(key)) {
               seen.add(key);
-              matches.push({ ...m, line, column, span: pointSpan(line, column), frequency: cbFreq, loopContext: true, enclosingFunction: m.enclosingFunction ?? null });
+              matches.push({ ...m, line, column, span, frequency: cbFreq, loopContext: true, enclosingFunction: m.enclosingFunction ?? null });
             }
           }
         }
@@ -704,7 +703,7 @@ export async function scanSourceWithAst(
                     const key = `${m.provider}:${m.methodChain}:${line}:nested`;
                     if (!seen.has(key)) {
                       seen.add(key);
-                      matches.push({ ...m, line, column, span: pointSpan(line, column), frequency: "parallel", loopContext: true, enclosingFunction: m.enclosingFunction ?? null });
+                      matches.push({ ...m, line, column, span, frequency: "parallel", loopContext: true, enclosingFunction: m.enclosingFunction ?? null });
                     }
                   }
                 }
@@ -718,7 +717,7 @@ export async function scanSourceWithAst(
 
   // ── 10. Re-process middleware registrations now that fnApiCalls is built ─────
   for (const callInfo of allCalls) {
-    const { methodChain, args, line, column, node } = callInfo;
+    const { methodChain, args, line, column, node, span } = callInfo;
     if (!isMiddlewareCall(methodChain)) continue;
     for (const arg of args) {
       if (arg.type !== "identifier") continue;
@@ -730,7 +729,7 @@ export async function scanSourceWithAst(
             const key = `${m.provider}:${m.methodChain}:${line}:mw`;
             if (!seen.has(key)) {
               seen.add(key);
-              matches.push({ ...m, line, column, span: pointSpan(line, column), frequency: "single", loopContext: false, isMiddleware: true, enclosingFunction: m.enclosingFunction ?? null });
+              matches.push({ ...m, line, column, span, frequency: "single", loopContext: false, isMiddleware: true, enclosingFunction: m.enclosingFunction ?? null });
             }
           }
         }

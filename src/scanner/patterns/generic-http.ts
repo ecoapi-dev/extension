@@ -29,14 +29,17 @@ const PATTERN_DEFS: PatternDef[] = [
     methodGroup: null,
   },
   {
+    // Same reasoning as the quoted single-arg pattern above: only match when
+    // there's no options arg, since regex can't parse multi-line `{ method: ... }`
+    // blocks and would emit a wrong-method GET fallback. AST handles those.
     sdk: "fetch",
-    regex: /fetch\(\s*`([^`]+)`/gi,
+    regex: /fetch\(\s*`([^`\n]+)`\s*\)/gi,
     urlGroup: 1,
     methodGroup: null,
   },
   {
     sdk: "fetch",
-    regex: /fetch\(\s*([A-Za-z_$][\w$.]*)/gi,
+    regex: /fetch\(\s*([A-Za-z_$][\w$.]*)\s*\)/gi,
     urlGroup: 1,
     methodGroup: null,
     normalizeUrl: normalizeDynamic,

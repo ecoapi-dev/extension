@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { maskUrlDynamicParts } from "../scanner/url-template";
 
-async function run(name: string, fn: () => void): Promise<void> {
-  try { fn(); console.log(`PASS ${name}`); }
+async function run(name: string, fn: () => void | Promise<void>): Promise<void> {
+  try { await fn(); console.log(`PASS ${name}`); }
   catch (err) { console.error(`FAIL ${name}`); throw err; }
 }
 

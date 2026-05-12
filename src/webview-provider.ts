@@ -746,11 +746,19 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       if (!fileUri) return;
       const doc = await vscode.workspace.openTextDocument(fileUri);
 
+      // Stale spans (e.g. from a re-scan after the file shrank) can throw inside
+      // vscode.Range and be swallowed by the catch — clamp to the document so
+      // click-back always lands somewhere visible.
+      const lastLineIdx = Math.max(doc.lineCount - 1, 0);
+      const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
       const range = span
-        ? new vscode.Range(
-            span.startLine - 1, span.startColumn,
-            span.endLine - 1, span.endColumn,
-          )
+        ? (() => {
+            const startLine = clamp(span.startLine - 1, 0, lastLineIdx);
+            const endLine = clamp(span.endLine - 1, startLine, lastLineIdx);
+            const startCol = clamp(span.startColumn, 0, doc.lineAt(startLine).text.length);
+            const endCol = clamp(span.endColumn, 0, doc.lineAt(endLine).text.length);
+            return new vscode.Range(startLine, startCol, endLine, endCol);
+          })()
         : line
           ? new vscode.Range(line - 1, 0, line - 1, 0)
           : undefined;
