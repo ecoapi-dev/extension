@@ -1,4 +1,5 @@
 import type { ApiCallInput, Severity, SuggestionType } from "../analysis/types";
+import type { SourceSpan } from "../scanner/source-span";
 
 export interface FileNode {
   id: string;
@@ -13,6 +14,7 @@ export interface ApiCallNode {
   fileId: string;
   filePath: string;
   line: number;
+  span: SourceSpan | null;
   provider: string | null;
   method: string;
   url: string;

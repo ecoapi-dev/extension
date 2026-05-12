@@ -204,6 +204,7 @@ export function buildRepoIntelligenceSnapshot(
         fileId: filePath,
         filePath,
         line: call.line,
+        span: call.span ?? null,
         provider,
         method: call.method,
         url: call.url,
