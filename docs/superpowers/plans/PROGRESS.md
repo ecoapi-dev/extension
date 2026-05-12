@@ -35,7 +35,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 | A  | Parallel (3 agents) | T3, T5, T6 | 🟢 |
 | F3 | Foundation, serial | T4 | 🟢 |
 | F4 | Foundation, serial | T7 | 🟢 |
-| B  | Parallel (2 agents) | T8, T9 | ⬜ |
+| B  | Parallel (2 agents) | T8, T9 | 🟢 |
 | C  | Serial (manual UI) | T10 | ⬜ |
 | V  | Serial (verification) | T11 | ⬜ |
 
@@ -48,8 +48,8 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 - [x] **T5** (A) Add optional `span` to regex match types — `src/scanner/patterns/types.ts`
 - [x] **T6** (A) Add `span` to `ApiCallInput` and `EndpointCallSite` — `src/analysis/types.ts`
 - [x] **T7** (F4) Compute spans in `core-scanner.ts` for both paths
-- [ ] **T8** (B) Add `span` to `ApiCallNode` + pipe through `intelligence/builder.ts`
-- [ ] **T9** (B) Pipe `span` into `EndpointCallSite` in `scan-results.ts`
+- [x] **T8** (B) Add `span` to `ApiCallNode` + pipe through `intelligence/builder.ts`
+- [x] **T9** (B) Pipe `span` into `EndpointCallSite` in `scan-results.ts`
 - [ ] **T10** (C) Reveal-by-span in IPC + webview (manual EDH verification)
 - [ ] **T11** (V) Acceptance verification + roadmap doc update
 
@@ -125,6 +125,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 > Append `YYYY-MM-DD HH:MM — <one-line update>`. Newest at top.
 
+- 2026-05-12 03:25 — B1 batch B complete: `ApiCallNode` gains required-nullable `span: SourceSpan | null` and `intelligence/builder.ts` populates it via `call.span ?? null` (T8, `9003f4d`); `scan-results.ts` propagates `span: call.span` at all 3 callSites construction sites (T9, `afc8f1b`). Both worktree-isolated dispatches landed directly on the working branch (same as Batch A); files disjoint, declared order preserved (T8 → T9).
 - 2026-05-12 03:15 — B1 batch F4 complete: `core-scanner.ts` now threads `span` through both scan paths (T7, `282f1b8`). AST path forwards `match.span` from `AstCallMatch`; regex path computes a line-wide span (col 0 → `line.length`) — true call-tight regex spans require a `matchLine` API change that's out of scope per plan.
 - 2026-05-12 03:10 — B1 batch F3 complete: `AstCallMatch.span` now required and populated at all 10 emit sites in `ast-scanner.ts` (T4, `c346867`). Five test fixtures fixed up to satisfy the new required field: `python-waste-detector.test.ts` (`901e5ae`) and `ast-{batch,cache,concurrency,cross-file-resolver}-detector.test.ts` (`6cbc4a7`, which also added pre-existing missing `confidence: 1` to the four detector helpers). All five test files now build clean and pass. Span-related tsc is fully clean.
 - 2026-05-12 02:50 — B1 batch A complete: span field threaded through `CallInfo` (T3, merge of `worktree-agent-adbafd374ffba4dac`), regex match types (T5, `1db3d79`), and `ApiCallInput`/`EndpointCallSite` (T6, `94fc288`). T5 and T6 committed directly onto the working branch instead of in isolated worktrees — files are disjoint so order is preserved. Reviewer scope reduced to per-task tsc + targeted test runs.
