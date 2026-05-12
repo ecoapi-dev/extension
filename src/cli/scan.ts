@@ -152,7 +152,7 @@ async function runContextFormat(options: CliOptions, access: Awaited<ReturnType<
   const snapshot = buildSnapshot({ apiCalls, findings, repoRoot, totalFilesScanned: access.files.length });
   const scored = scoreSnapshot(snapshot);
   const clusters = buildReviewClusters(scored);
-  const compressed = compressClusters(clusters, snapshot);
+  const compressed = await compressClusters(clusters, snapshot);
   const exportContext = buildExportContext(compressed, snapshot, scored);
   const markdown = formatAsMarkdown(exportContext);
 
@@ -176,7 +176,7 @@ async function runPackCommand(
   const snapshot = buildSnapshot({ apiCalls, findings, repoRoot: dir, totalFilesScanned: access.files.length });
   const scored = scoreSnapshot(snapshot);
   const clusters = buildReviewClusters(scored);
-  const compressed = compressClusters(clusters, snapshot);
+  const compressed = await compressClusters(clusters, snapshot);
   const context = buildExportContext(compressed, snapshot, scored);
 
   const content = format === "json" ? formatAsJSON(context) : formatAsMarkdown(context);

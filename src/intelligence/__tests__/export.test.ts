@@ -10,17 +10,24 @@ import { buildExportContext, formatAsJSON, formatAsMarkdown } from "../export";
 import { scoreRepoIntelligence } from "../scorer";
 import type { CompressedCluster, ExportedContext } from "../types";
 
-function run(name: string, fn: () => void): void {
-  try {
-    fn();
-    console.log(`PASS ${name}`);
-  } catch (error) {
-    console.error(`FAIL ${name}`);
-    throw error;
-  }
+const pendingTests: Array<() => Promise<void>> = [];
+
+function run(name: string, fn: () => void | Promise<void>): void {
+  pendingTests.push(async () => {
+    try {
+      await fn();
+      console.log(`PASS ${name}`);
+    } catch (error) {
+      console.error(`FAIL ${name}`);
+      throw error;
+    }
+  });
 }
 
-function withTempWorkspace(files: Record<string, string>, fn: (workspaceDir: string) => void): void {
+async function withTempWorkspace(
+  files: Record<string, string>,
+  fn: (workspaceDir: string) => void | Promise<void>
+): Promise<void> {
   const originalCwd = process.cwd();
   const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "export-test-"));
 
@@ -31,15 +38,15 @@ function withTempWorkspace(files: Record<string, string>, fn: (workspaceDir: str
       fs.writeFileSync(absolutePath, content, "utf8");
     }
     process.chdir(workspaceDir);
-    fn(workspaceDir);
+    await fn(workspaceDir);
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(workspaceDir, { recursive: true, force: true });
   }
 }
 
-run("buildExportContext assembles meta, top files, key risks, and passes clusters through unchanged", () => {
-  withTempWorkspace(
+run("buildExportContext assembles meta, top files, key risks, and passes clusters through unchanged", async () => {
+  await withTempWorkspace(
     {
       "src/chat/loop.ts": [
         "export async function loop(items) {",
@@ -59,7 +66,7 @@ run("buildExportContext assembles meta, top files, key risks, and passes cluster
         "}, 1000);",
       ].join("\n"),
     },
-    (workspaceDir) => {
+    async (workspaceDir) => {
       const snapshot = buildSnapshot({
         apiCalls: [
           {
@@ -112,7 +119,7 @@ run("buildExportContext assembles meta, top files, key risks, and passes cluster
       });
 
       const scored = scoreRepoIntelligence(snapshot);
-      const clusters = compressClusters(buildReviewClusters(scored), snapshot);
+      const clusters = await compressClusters(buildReviewClusters(scored), snapshot);
       const context = buildExportContext(clusters, snapshot, scored, { generatorVersion: "0.1.0" });
 
       assert.equal(context.meta.projectName, path.basename(workspaceDir));
@@ -837,4 +844,13 @@ run("buildExportContext prefers non-generated non-tooling top files when runtime
   assert.equal(context.summary.topFiles[0]?.filePath, "src/runtime.ts");
   assert.ok(!context.summary.topFiles.some((file) => file.filePath === "dashboard-dist/assets/index-abc123.js"));
   assert.ok(!context.summary.topFiles.some((file) => file.filePath === "src/scanner/patterns/provider-gemini.ts"));
+});
+
+(async () => {
+  for (const test of pendingTests) {
+    await test();
+  }
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

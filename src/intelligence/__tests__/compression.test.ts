@@ -8,17 +8,24 @@ import { buildReviewClusters } from "../clusters";
 import { compressClusters } from "../compression";
 import { scoreRepoIntelligence } from "../scorer";
 
-function run(name: string, fn: () => void): void {
-  try {
-    fn();
-    console.log(`PASS ${name}`);
-  } catch (error) {
-    console.error(`FAIL ${name}`);
-    throw error;
-  }
+const pendingTests: Array<() => Promise<void>> = [];
+
+function run(name: string, fn: () => void | Promise<void>): void {
+  pendingTests.push(async () => {
+    try {
+      await fn();
+      console.log(`PASS ${name}`);
+    } catch (error) {
+      console.error(`FAIL ${name}`);
+      throw error;
+    }
+  });
 }
 
-function withTempWorkspace(files: Record<string, string>, fn: (workspaceDir: string) => void): void {
+async function withTempWorkspace(
+  files: Record<string, string>,
+  fn: (workspaceDir: string) => void | Promise<void>
+): Promise<void> {
   const originalCwd = process.cwd();
   const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "compression-test-"));
 
@@ -29,15 +36,15 @@ function withTempWorkspace(files: Record<string, string>, fn: (workspaceDir: str
       fs.writeFileSync(absolutePath, content, "utf8");
     }
     process.chdir(workspaceDir);
-    fn(workspaceDir);
+    await fn(workspaceDir);
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(workspaceDir, { recursive: true, force: true });
   }
 }
 
-run("compressClusters returns compact summaries, normalized findings, and bounded snippets", () => {
-  withTempWorkspace(
+run("compressClusters returns compact summaries, normalized findings, and bounded snippets", async () => {
+  await withTempWorkspace(
     {
       "src/chat/loop.ts": [
         "export async function loop(items) {",
@@ -63,7 +70,7 @@ run("compressClusters returns compact summaries, normalized findings, and bounde
         "}, 1000);",
       ].join("\n"),
     },
-    () => {
+    async () => {
       const snapshot = buildSnapshot({
         apiCalls: [
           {
@@ -136,7 +143,7 @@ run("compressClusters returns compact summaries, normalized findings, and bounde
       });
 
       const clusters = buildReviewClusters(scoreRepoIntelligence(snapshot));
-      const compressed = compressClusters(clusters, snapshot);
+      const compressed = await compressClusters(clusters, snapshot);
 
       assert.ok(compressed.length >= 1);
       const loopCluster = compressed.find((cluster) => cluster.primarySummary.filePath === "src/chat/loop.ts");
@@ -179,8 +186,8 @@ run("compressClusters returns compact summaries, normalized findings, and bounde
   );
 });
 
-run("compressClusters dedupes repeated same-file findings and collapses repeated titles in export output", () => {
-  withTempWorkspace(
+run("compressClusters dedupes repeated same-file findings and collapses repeated titles in export output", async () => {
+  await withTempWorkspace(
     {
       "src/chat/cache.ts": [
         "export async function loadModel() {",
@@ -189,7 +196,7 @@ run("compressClusters dedupes repeated same-file findings and collapses repeated
         "}",
       ].join("\n"),
     },
-    () => {
+    async () => {
       const snapshot = buildSnapshot({
         apiCalls: [
           {
@@ -243,7 +250,7 @@ run("compressClusters dedupes repeated same-file findings and collapses repeated
         ],
       });
 
-      const compressed = compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
+      const compressed = await compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
       const cluster = compressed.find((entry) => entry.primarySummary.filePath === "src/chat/cache.ts");
       assert.ok(cluster);
       assert.equal(cluster?.findings.filter((finding) => finding.title === "Missing caching").length, 1);
@@ -252,8 +259,8 @@ run("compressClusters dedupes repeated same-file findings and collapses repeated
   );
 });
 
-run("compressClusters uses softer evidence language for weak test-derived files", () => {
-  withTempWorkspace(
+run("compressClusters uses softer evidence language for weak test-derived files", async () => {
+  await withTempWorkspace(
     {
       "src/test/providers.test.ts": [
         "for (const provider of ALL_PROVIDERS) {",
@@ -261,7 +268,7 @@ run("compressClusters uses softer evidence language for weak test-derived files"
         "}",
       ].join("\n"),
     },
-    () => {
+    async () => {
       const snapshot = buildSnapshot({
         apiCalls: [
           {
@@ -276,7 +283,7 @@ run("compressClusters uses softer evidence language for weak test-derived files"
         findings: [],
       });
 
-      const compressed = compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
+      const compressed = await compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
       const testCluster = compressed.find((cluster) => cluster.primarySummary.filePath === "src/test/providers.test.ts");
       assert.ok(testCluster);
       assert.ok(testCluster?.primarySummary.description.startsWith("This test file"));
@@ -289,8 +296,8 @@ run("compressClusters uses softer evidence language for weak test-derived files"
   );
 });
 
-run("compressClusters uses neutral snippet labels for test helper cache-like code", () => {
-  withTempWorkspace(
+run("compressClusters uses neutral snippet labels for test helper cache-like code", async () => {
+  await withTempWorkspace(
     {
       "src/test/providers.test.ts": [
         "function findProvider(id) {",
@@ -298,7 +305,7 @@ run("compressClusters uses neutral snippet labels for test helper cache-like cod
         "}",
       ].join("\n"),
     },
-    () => {
+    async () => {
       const snapshot = buildSnapshot({
         apiCalls: [
           {
@@ -324,7 +331,7 @@ run("compressClusters uses neutral snippet labels for test helper cache-like cod
         ],
       });
 
-      const compressed = compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
+      const compressed = await compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
       const testCluster = compressed.find((cluster) => cluster.primarySummary.filePath === "src/test/providers.test.ts");
       assert.ok(testCluster);
       assert.ok(testCluster?.snippets.some((snippet) => snippet.label === "Relevant test helper context"));
@@ -333,8 +340,8 @@ run("compressClusters uses neutral snippet labels for test helper cache-like cod
   );
 });
 
-run("compressClusters handles files with only findings, null providers, and missing snippet files", () => {
-  withTempWorkspace(
+run("compressClusters handles files with only findings, null providers, and missing snippet files", async () => {
+  await withTempWorkspace(
     {
       "src/shared/a.ts": [
         "export async function a() {",
@@ -352,7 +359,7 @@ run("compressClusters handles files with only findings, null providers, and miss
         "}",
       ].join("\n"),
     },
-    () => {
+    async () => {
       const snapshot = buildSnapshot({
         apiCalls: [
           {
@@ -404,7 +411,7 @@ run("compressClusters handles files with only findings, null providers, and miss
         ],
       });
 
-      const compressed = compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
+      const compressed = await compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
       assert.ok(compressed.length >= 1);
 
       const sharedCluster = compressed.find((cluster) => cluster.primarySummary.filePath.startsWith("src/shared/"));
@@ -425,8 +432,8 @@ run("compressClusters handles files with only findings, null providers, and miss
   );
 });
 
-run("compressClusters uses snapshot.repoRoot instead of process.cwd() for snippet reads", () => {
-  withTempWorkspace(
+run("compressClusters uses snapshot.repoRoot instead of process.cwd() for snippet reads", async () => {
+  await withTempWorkspace(
     {
       "src/chat/loop.ts": [
         "export async function loop(items) {",
@@ -436,7 +443,7 @@ run("compressClusters uses snapshot.repoRoot instead of process.cwd() for snippe
         "}",
       ].join("\n"),
     },
-    (workspaceDir) => {
+    async (workspaceDir) => {
       const snapshot = buildSnapshot({
         repoRoot: workspaceDir,
         apiCalls: [
@@ -456,7 +463,7 @@ run("compressClusters uses snapshot.repoRoot instead of process.cwd() for snippe
       process.chdir(os.tmpdir());
 
       try {
-        const compressed = compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
+        const compressed = await compressClusters(buildReviewClusters(scoreRepoIntelligence(snapshot)), snapshot);
         const loopCluster = compressed.find((cluster) => cluster.primarySummary.filePath === "src/chat/loop.ts");
         assert.ok(loopCluster);
         assert.ok((loopCluster?.snippets.length ?? 0) >= 1);
@@ -465,4 +472,13 @@ run("compressClusters uses snapshot.repoRoot instead of process.cwd() for snippe
       }
     }
   );
+});
+
+(async () => {
+  for (const test of pendingTests) {
+    await test();
+  }
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

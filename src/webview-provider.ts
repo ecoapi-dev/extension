@@ -1151,7 +1151,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       });
       const scored = scoreSnapshot(snapshot);
       const clusters = buildReviewClusters(scored);
-      const compressed = compressClusters(clusters, snapshot);
+      const compressed = await compressClusters(clusters, snapshot);
       const generatorVersion = String(this.context.extension.packageJSON.version ?? "");
       const exportContext = buildExportContext(compressed, snapshot, scored, {
         generatorVersion: generatorVersion || undefined,
