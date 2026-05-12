@@ -341,6 +341,7 @@ export function mergeRemoteAndLocalEndpoints(
   }
 
   const syntheticByMethodUrl = new Map<string, EndpointRecord>();
+  const emittedSyntheticIds = new Set<string>();
   for (const call of localCalls) {
     if (!shouldIncludeSynthetic(call)) continue;
     const key = buildEndpointKey(call.method, call.url);
@@ -389,10 +390,11 @@ export function mergeRemoteAndLocalEndpoints(
       // (different method, same masked URL, etc.).
       let id = stableId;
       let suffix = 1;
-      while (syntheticByMethodUrl.has(key) === false && [...syntheticByMethodUrl.values()].some((e) => e.id === id)) {
+      while (emittedSyntheticIds.has(id)) {
         suffix += 1;
         id = `${stableId}_${suffix}`;
       }
+      emittedSyntheticIds.add(id);
       syntheticByMethodUrl.set(key, {
         id,
         projectId,
