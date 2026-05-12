@@ -14,18 +14,23 @@
 import assert from "node:assert/strict";
 import { runCrossFileResolution, type PerFileResult } from "../ast/cross-file-resolver";
 import type { AstCallMatch, AstScanResult } from "../ast/ast-scanner";
+import { pointSpan } from "../scanner/source-span";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeMatch(overrides: Partial<AstCallMatch>): AstCallMatch {
+  const line = overrides.line ?? 5;
+  const column = overrides.column ?? 0;
   return {
     kind: "sdk",
     provider: "openai",
     packageName: "openai",
     methodChain: "client.chat.completions.create",
+    confidence: 1,
     method: "POST",
-    line: 5,
-    column: 0,
+    line,
+    column,
+    span: pointSpan(line, column),
     frequency: "single",
     loopContext: false,
     batchCapable: false,
