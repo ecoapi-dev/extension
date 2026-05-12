@@ -19,7 +19,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 | Plan | Issue | Status | Plan File |
 |---|---|---|---|
 | **B1** Span-based source locations | [#80](https://github.com/recost-dev/extension/issues/80) | 🟡 (code complete; manual EDH check pending on T10) | [2026-05-12-b1-span-based-source-locations.md](2026-05-12-b1-span-based-source-locations.md) |
-| **B3** Stable endpoint IDs | [#82](https://github.com/recost-dev/extension/issues/82) | ⬜ | [2026-05-12-b3-stable-endpoint-ids.md](2026-05-12-b3-stable-endpoint-ids.md) |
+| **B3** Stable endpoint IDs | [#82](https://github.com/recost-dev/extension/issues/82) | 🟡 (code complete; T7 awaits manual EDH check) | [2026-05-12-b3-stable-endpoint-ids.md](2026-05-12-b3-stable-endpoint-ids.md) |
 | **A4** AST↔regex parity | [#76](https://github.com/recost-dev/extension/issues/76) | ⬜ | [2026-05-12-a4-ast-regex-parity.md](2026-05-12-a4-ast-regex-parity.md) |
 
 ---
@@ -61,25 +61,25 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 | Batch | Mode | Tasks | Status |
 |---|---|---|---|
-| A  | Parallel (2 agents) | T1, T2 | ⬜ |
-| F1 | Foundation, serial | T3 | ⬜ |
-| F2 | Foundation, serial | T4 | ⬜ |
-| B  | Parallel (2 agents) | T5, T6 | ⬜ |
-| C  | Serial (manual UI) | T7 | ⬜ |
-| D  | Serial | T8 | ⬜ |
-| V  | Serial (verification) | T9 | ⬜ |
+| A  | Parallel (2 agents) | T1, T2 | 🟢 |
+| F1 | Foundation, serial | T3 | 🟢 |
+| F2 | Foundation, serial | T4 | 🟢 |
+| B  | Parallel (2 agents) | T5, T6 | 🟢 |
+| C  | Serial (manual UI) | T7 | 🟡 (code complete; manual EDH check pending) |
+| D  | Serial | T8 | 🟢 |
+| V  | Serial (verification) | T9 | 🟢 (automated-verified; #5 awaits manual EDH per T7) |
 
 ### Tasks
 
-- [ ] **T1** (A) URL template masker — `src/scanner/url-template.ts` + test
-- [ ] **T2** (A) Enclosing-function-name extractor — `src/ast/enclosing-function.ts` + test
-- [ ] **T3** (F1) `computeEndpointId` — `src/scanner/endpoint-id.ts` + test
-- [ ] **T4** (F2) Emit `enclosingFunction` from AST scanner; add to `ApiCallInput`
-- [ ] **T5** (B) Use `computeEndpointId` in `intelligence/builder.ts`
-- [ ] **T6** (B) Use `computeEndpointId` in `scan-results.ts`
-- [ ] **T7** (C) Migrate persisted state in `webview-provider.ts` (manual EDH verification)
-- [ ] **T8** (D) Stability test against a real refactor — extends `endpoint-id.test.ts`
-- [ ] **T9** (V) Acceptance verification + roadmap doc update
+- [x] **T1** (A) URL template masker — `src/scanner/url-template.ts` + test
+- [x] **T2** (A) Enclosing-function-name extractor — `src/ast/enclosing-function.ts` + test
+- [x] **T3** (F1) `computeEndpointId` — `src/scanner/endpoint-id.ts` + test (reuses `normalizeRepoPath` from `intelligence/path-utils`)
+- [x] **T4** (F2) Emit `enclosingFunction` from AST scanner; add to `ApiCallInput` (9 emit sites updated, 5 test fixture files patched)
+- [x] **T5** (B) Use `computeEndpointId` in `intelligence/builder.ts` (with `_L<line>` collision fallback)
+- [x] **T6** (B) Use `computeEndpointId` in `scan-results.ts` (Set-based collision check)
+- [~] **T7** (C) Migrate persisted state in `webview-provider.ts` — code landed; scope expanded to cover the parallel synthetic-ID minter at the second emit site spotted by T6 review. **Manual EDH verification pending** — F5 dev host, save a simulator scenario, edit an unrelated file, re-scan, confirm scenario still loads.
+- [x] **T8** (D) Stability test against a real refactor — extends `endpoint-id.test.ts` (13 cases total)
+- [x] **T9** (V) Acceptance verification + roadmap doc update (`docs/accuracy/traceability.md` § B3 marked Landed)
 
 ---
 
@@ -125,6 +125,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 > Append `YYYY-MM-DD HH:MM — <one-line update>`. Newest at top.
 
+- 2026-05-12 04:30 — B3 **code complete** across all 9 tasks. Batch A (T1 url-template `fba4295`, T2 enclosing-function `a81fd02`) ran via parallel worktrees with controller merge in declared order; T2 follow-up `a8f2be2` added destructure-binding clarifier comment + nested-function test per code-quality review. F1 (T3 `694dc30` + follow-up `d6b0feb` switched to `normalizeRepoPath` from `intelligence/path-utils`, removing a divergent local re-implementation flagged by code-quality review). F2 (T4 `4799fcc` emit at 9 AST scanner sites + 5 fixture updates; follow-up `b9e54be` documented the asymmetric `enclosingFunction` field and the 7d override semantics). Batch B (T5 builder `7cea7b8`, T6 scan-results `2e6b3a8`) again via parallel worktrees; T6 reviewer spotted a second `local-${scanId}` minter in `webview-provider.ts` and an O(n²) collision-check spread — both addressed (`e8a8fee` Set-based collision check, then folded the second emit site into T7's commit `0c7c707`). T7 (C) added `pruneSavedScenariosAgainst` invoked on both local-only and remote-enriched scan completion paths; `6b8828b` added a zero-endpoint guard preventing silent destruction of saved scenarios on empty/misconfigured scans. T8 (D) appended 2 end-to-end stability tests (`977e4f4`). T9 (V) automated 4 of 5 acceptance criteria across `url-template.test.ts`, `enclosing-function.test.ts`, `endpoint-id.test.ts` (13 cases); criterion #5 (saved scenarios survive non-structural changes) is code-complete but **awaits manual EDH verification per T7 Step 4** — F5 the dev host, save a simulator scenario, edit an unrelated file, re-scan, confirm the scenario still loads.
 - 2026-05-12 03:50 — B1 **code complete**. T10 (`69ca79d`) extended `openFile` IPC with `span?` field; `webview-provider.ts` handler builds `vscode.Range` from span when present (falls back to line cursor); `ResultsPage.tsx` sends `site?.span`; webview-side `SourceSpan` mirror added to `webview/src/types.ts` for typecheck. T11 (`371fd8e`) updated `docs/accuracy/traceability.md` § B1 — 3/4 acceptance criteria automated-verified (span field present, multi-line endLine>startLine, line back-compat). **Criterion #3 (full-call selection on click) requires manual EDH verification** — F5 the dev host, run a scan on a workspace with a multi-line `await openai.chat.completions.create({...})`, click that endpoint, confirm the selection covers from `await` through the closing `)`.
 - 2026-05-12 03:25 — B1 batch B complete: `ApiCallNode` gains required-nullable `span: SourceSpan | null` and `intelligence/builder.ts` populates it via `call.span ?? null` (T8, `9003f4d`); `scan-results.ts` propagates `span: call.span` at all 3 callSites construction sites (T9, `afc8f1b`). Both worktree-isolated dispatches landed directly on the working branch (same as Batch A); files disjoint, declared order preserved (T8 → T9).
 - 2026-05-12 03:15 — B1 batch F4 complete: `core-scanner.ts` now threads `span` through both scan paths (T7, `282f1b8`). AST path forwards `match.span` from `AstCallMatch`; regex path computes a line-wide span (col 0 → `line.length`) — true call-tight regex spans require a `matchLine` API change that's out of scope per plan.

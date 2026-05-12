@@ -123,26 +123,28 @@ Key properties:
 - **Includes enclosing function name** — disambiguates two calls to the same method in the same file.
 - **URL templates masked** — `/users/123` and `/users/456` get the same ID (mask numeric IDs, UUIDs, etc.).
 
-### Investigation steps
-1. Add an enclosing-function-name extractor in `call-visitor.ts` (walk parent nodes for `function_declaration`, `method_definition`, `arrow_function` parent var name).
-2. Add `maskUrlDynamicParts(url)` in a util module — replaces numeric segments, UUIDs, and known ID patterns with `:id`.
-3. Wire into a single `computeEndpointId()` function. Use it in `EndpointRecord` construction.
-4. Migration: existing persisted state keyed by old IDs needs a fallback — log warning, ignore the old state, write new IDs on next scan.
+### ~~Investigation steps~~ (resolved — see implementation plan `docs/superpowers/plans/2026-05-12-b3-stable-endpoint-ids.md`)
+1. ~~Add an enclosing-function-name extractor in `call-visitor.ts` (walk parent nodes for `function_declaration`, `method_definition`, `arrow_function` parent var name).~~ Done in T2 (new module `src/ast/enclosing-function.ts`, used by both `endpoint-id.ts` and `ast-scanner.ts`).
+2. ~~Add `maskUrlDynamicParts(url)` in a util module — replaces numeric segments, UUIDs, and known ID patterns with `:id`.~~ Done in T1 (`src/scanner/url-template.ts`).
+3. ~~Wire into a single `computeEndpointId()` function. Use it in `EndpointRecord` construction.~~ Done in T3/T5/T6: `src/scanner/endpoint-id.ts` is the canonical hasher; `intelligence/builder.ts` and `scan-results.ts` both consume it; `webview-provider.ts`'s parallel synthetic-ID minter was migrated alongside (T7 scope expansion).
+4. ~~Migration: existing persisted state keyed by old IDs needs a fallback — log warning, ignore the old state, write new IDs on next scan.~~ Done in T7: `pruneSavedScenariosAgainst` drops saved simulator scenarios whose referenced endpoint IDs are absent from the current scan and persists the cleaned list to `recost.simulatorScenarios`. Includes a zero-endpoint guard to avoid wiping all scenarios on misconfigured/empty scans.
 
 ### Acceptance criteria
-- [ ] Endpoint IDs survive moving a call ±20 lines in the same file.
-- [ ] Endpoint IDs survive renaming a containing variable but not the function.
-- [ ] Two distinct calls to `openai.chat.completions.create` in the same file but different functions get distinct IDs.
-- [ ] `/api/users/123` and `/api/users/456` get the same ID.
-- [ ] Saved simulator scenarios and suppressed findings survive a scan after non-structural code changes.
+- [x] Endpoint IDs survive moving a call ±20 lines in the same file. *(T3 + T8: `computeEndpointId` has no `line`/`column`/`span` input; verified by tests "ID survives ±20 line move" and "end-to-end: same call, moved 20 lines, gets the same ID".)*
+- [x] Endpoint IDs survive renaming a containing variable but not the function. *(T3 test "ID survives renaming an unrelated containing variable"; T3 test "ID changes when enclosing function changes".)*
+- [x] Two distinct calls to `openai.chat.completions.create` in the same file but different functions get distinct IDs. *(T8 test "end-to-end: two calls in same file but different functions diverge"; supported by collision-disambiguation fallback `_L<line>` in `builder.ts` for same-function same-URL repeats.)*
+- [x] `/api/users/123` and `/api/users/456` get the same ID. *(T1 url-template masks numeric segments to `:id`; T3 test "URLs differing only by numeric ID produce the same endpoint ID".)*
+- [~] Saved simulator scenarios and suppressed findings survive a scan after non-structural code changes. *(Code path verified: stable IDs mean a re-scan after non-structural change produces the same IDs, so `pruneSavedScenariosAgainst` keeps scenarios. T7 Step 4 — F5 EDH, save a scenario, edit an unrelated file, re-scan, confirm scenario still loads — is **pending manual verification**.)*
 
 ### Files
 - New: `src/ast/enclosing-function.ts`
 - New: `src/scanner/url-template.ts`
-- `src/scanner/types.ts` (EndpointRecord id field)
-- Wherever endpoint IDs are currently generated (search for `id:` in scan-results / webview-provider)
+- New: `src/scanner/endpoint-id.ts` (+ test)
+- Modified: `src/analysis/types.ts` (`ApiCallInput.enclosingFunction?`), `src/ast/ast-scanner.ts` (emit `enclosingFunction` on every match), `src/scanner/core-scanner.ts` (pipe through), `src/intelligence/builder.ts` (use `computeEndpointId` + `_L<line>` collision fallback), `src/scan-results.ts` (use `computeEndpointId` + Set-based collision check), `src/webview-provider.ts` (parallel synthetic-ID migration + `pruneSavedScenariosAgainst`).
 
 ### Depends on
-- B1 (spans help identify the enclosing function reliably).
+- B1 (spans help identify the enclosing function reliably). *(B1 landed first; B3's `enclosingFunctionName` walker uses `node.parent` so the dependency is documentary, not blocking.)*
+
+✅ Landed: 2026-05-12 on branch `foundation-parser-accuracy`. Acceptance criteria 1–4 automated-verified across `src/test/url-template.test.ts`, `src/test/enclosing-function.test.ts`, and `src/test/endpoint-id.test.ts` (13 cases). Criterion #5 is code-complete but awaits manual EDH verification per T7 Step 4.
 
 ---
