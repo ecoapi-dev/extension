@@ -31,7 +31,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 | Batch | Mode | Tasks | Status |
 |---|---|---|---|
 | F1 | Foundation, serial | T1 | 🟢 |
-| F2 | Foundation, serial | T2 | ⬜ |
+| F2 | Foundation, serial | T2 | 🟢 |
 | A  | Parallel (3 agents) | T3, T5, T6 | ⬜ |
 | F3 | Foundation, serial | T4 | ⬜ |
 | F4 | Foundation, serial | T7 | ⬜ |
@@ -42,7 +42,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 ### Tasks
 
 - [x] **T1** (F1) Define the `SourceSpan` type — `src/scanner/source-span.ts`
-- [ ] **T2** (F2) Test the regex-side span helper — `src/test/source-span.test.ts`
+- [x] **T2** (F2) Test the regex-side span helper — `src/test/source-span.test.ts`
 - [ ] **T3** (A) Add `span` to `CallInfo` (AST visitor) — `src/ast/call-visitor.ts`
 - [ ] **T4** (F3) Add `span` to `AstCallMatch`, propagate through `ast-scanner.ts`
 - [ ] **T5** (A) Add optional `span` to regex match types — `src/scanner/patterns/types.ts`
@@ -125,5 +125,6 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 > Append `YYYY-MM-DD HH:MM — <one-line update>`. Newest at top.
 
+- 2026-05-12 02:35 — B1 batch F2 complete: SourceSpan helper tests landed (`881b918`, 3/3 cases pass). Spec + code-quality review passed with zero issues.
 - 2026-05-12 02:30 — B1 batch F1 complete: SourceSpan type + helpers landed on `foundation-parser-accuracy` (commits `bdfe45d`, `7e3187f`). Spec + code-quality review passed; reviewer's Important note on exclusive-end semantics addressed inline.
 - 2026-05-12 — Plans drafted, parallel batches and safety rules baked in, progress tracker initialized.
