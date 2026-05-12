@@ -143,6 +143,8 @@ import { client } from "../lib/clients";  // ← scanner must reach openai.ts
 
 ## A4. AST ↔ regex parity audit
 
+✅ **Landed: 2026-05-12** — see [issue #76](https://github.com/recost-dev/extension/issues/76). Parity runner lives at `src/test/parity.ts`, test entry at `src/test/parity.test.ts`, intentional-divergence allowlist at `docs/accuracy/PARITY.md`. Wired into `test:scanner` in `package.json` and runs in CI via `.github/workflows/test.yml`. First audit surfaced one regex bug (now fixed: `generic-http.ts` now does host-based provider attribution + drops the wrong-method GET fallback for multi-line fetch) and two structural multi-line cases (documented as `astOnly` in the allowlist).
+
 ### Problem
 The scanner has two detection paths for JS/TS/Python:
 - AST scanner (`src/ast/ast-scanner.ts`)
@@ -166,9 +168,9 @@ Currently there's no answer to either question. Silent disagreements mean either
 4. Fix bugs; document intentional divergences in a `PARITY.md` table; gate the test in CI.
 
 ### Acceptance criteria
-- [ ] Parity test runs in CI on every PR.
-- [ ] Every divergence the test produces is either fixed or annotated in `PARITY.md`.
-- [ ] Same `line` reported by both paths for every JS/TS/Python file where both detect a call.
+- [x] Parity test runs in CI on every PR.
+- [x] Every divergence the test produces is either fixed or annotated in `PARITY.md`.
+- [x] Same `line` reported by both paths for every JS/TS/Python file where both detect a call.
 
 ### Files
 - New: `src/test/parity.test.ts`
