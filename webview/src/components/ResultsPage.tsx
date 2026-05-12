@@ -493,7 +493,7 @@ function ProviderGroup({ provider, eps, pColor }: { provider: string; eps: Endpo
                 className="eco-btn-link"
                 style={{ fontSize: "10px", opacity: 0.7, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 title={filePath}
-                onClick={() => postMessage({ type: "openFile", file: filePath, line: site?.line })}
+                onClick={() => postMessage({ type: "openFile", file: filePath, line: site?.line, span: site?.span })}
               >
                 {fileName}{site?.line ? `:${site.line}` : ""}
               </button>

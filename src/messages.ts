@@ -1,6 +1,7 @@
 import type { EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
 import type { ChatProviderOption } from "./chat";
 import type { SimulatorInput, SimulatorResult } from "./simulator/types";
+import type { SourceSpan } from "./scanner/source-span";
 
 export type KeyServiceId =
   | "recost"
@@ -52,7 +53,7 @@ export type WebviewMessage =
   | { type: "chat"; provider: string; model: string; text: string }
   | { type: "modelChanged"; provider: string; model: string }
   | { type: "applyFix"; code: string; file: string; line?: number }
-  | { type: "openFile"; file: string; line?: number }
+  | { type: "openFile"; file: string; line?: number; span?: SourceSpan }
   | { type: "runSimulation"; input: SimulatorInput }
   | { type: "getAllKeyStatuses" }
   | { type: "getProjectIdStatus" }
