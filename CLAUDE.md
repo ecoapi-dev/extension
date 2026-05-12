@@ -18,7 +18,6 @@ VSCode extension that scans your workspace for API call patterns, estimates cost
 src/
   extension.ts            # Extension entry point
   api-client.ts           # HTTP client for remote ReCost API (rc- prefix key validation)
-  local-server.ts         # Embedded HTTP server (serves dashboard + proxies local analysis)
   webview-provider.ts     # Sidebar webview provider (IPC handling, local pricing table for 40+ providers, cost estimation algorithm)
   messages.ts             # IPC message types (extension ↔ webview)
   key-management.ts       # Key service registry, validation snapshots, KeyServiceDescriptor; manages recost + all chat provider keys
@@ -172,7 +171,7 @@ Then press **F5** in VSCode to launch the Extension Development Host.
 
 ## Architecture Notes
 
-- The extension embeds a local HTTP server (`local-server.ts`) that serves the built dashboard and handles analysis requests without any remote API
+- All "local" analysis (sustainability footprint, cost-by-provider, simulator runs, scenario CRUD) is computed on the extension host and delivered to the webview through typed IPC messages — no embedded HTTP server, no localhost ports
 - Webview ↔ extension IPC uses typed messages defined in `messages.ts`
 - The workspace scanner (`workspace-scanner.ts`) orchestrates the AST scanner (`src/ast/`) and regex patterns (`patterns/`) to detect API calls across supported file types
 - AST scanning produces rich per-endpoint metadata: `frequencyClass`, `costModel`, `batchCapable`, `cacheCapable`, `streaming`, `isMiddleware`, `crossFileOrigins`, `methodSignature`
@@ -180,7 +179,7 @@ Then press **F5** in VSCode to launch the Extension Development Host.
 - `local-waste-detector.ts` detects waste patterns using AST signals (N+1, unbounded loops, polling without backoff, missing cache guards, unbatched parallel calls)
 - AI review is optional: prompts live in `chat/prompts.ts`, calls go through `openai` SDK; key is stored in VSCode SecretStorage
 - AI review validation (`webview-provider.ts`) checks findings against allowed types, severity, file existence, and confidence threshold
-- `dashboard-dist/` must exist (built) before the extension can serve the dashboard — `build:dashboard` handles this
+- `dashboard-dist/` must exist (built) before the extension can load the dashboard into the webview — `build:dashboard` handles this
 
 ### AST Parsing Engine
 
@@ -192,14 +191,9 @@ The AST layer (`src/ast/`) uses web-tree-sitter (WASM) to parse JS/TS/Python sou
 - **`cross-file-resolver.ts`**: Follows import chains to resolve helper function calls back to their original HTTP call site
 - **`fingerprints/`**: Maps provider+method signatures to pricing models (`per_token`, `per_transaction`, `per_request`, `free`) and per-call cost estimates — data in JSON files per provider, loaded via `index.ts`/`registry.ts`
 
-### Local Server Endpoints
+### Local-Only Data Flow
 
-The embedded server (`local-server.ts`) exposes:
-- `GET /projects/local/sustainability` — electricity, water, CO2 footprint by provider
-- `GET /projects/local/cost/by-provider` — cost breakdown grouped by provider
-- `POST /api/projects/local/simulator/run` — run cost simulation
-- `GET/POST/DELETE /api/projects/local/simulator/scenarios` — scenario CRUD
-- `GET /api/projects/local/simulator/scenarios/export` — CSV export of scenarios
+There is no embedded HTTP server. All "local" data (sustainability footprint, cost-by-provider, simulator runs, scenario CRUD) is computed on the extension host and delivered to the webview through typed IPC messages defined in `src/messages.ts`. Scenarios are persisted via `vscode.globalState` under `eco.simulatorScenarios`.
 
 ### Auth / API Key System
 
@@ -240,7 +234,7 @@ The Cost Simulator (`src/simulator/`) is a pure computation layer (no Node/brows
 - **Data source abstraction** (`SimulatorDataSource` interface): `static-source.ts` maps `EndpointRecord[]` including `frequencyClass` and `costModel`
 - **VS Code sidebar**: "Simulate" tab in `ResultsPage`, rendered by `SimulatePage.tsx`. Sends `runSimulation` IPC message; receives `simulationResult`
 - **Dashboard**: `/simulator` route with full scenario management (save, compare 2, export CSV)
-- **Scenario persistence**: Saved scenarios stored in `vscode.globalState` under `eco.simulatorScenarios`, passed to local server via `onScenariosChanged` callback
+- **Scenario persistence**: Saved scenarios stored in `vscode.globalState` under `eco.simulatorScenarios` and synchronized to the webview via IPC messages
 
 ### Sidebar UI — Results Screen
 
