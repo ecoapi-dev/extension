@@ -1,5 +1,6 @@
 import { ApiCallMatch, LineMatcher } from "./types";
-import { normalizeDynamic, normalizeMethod } from "./utils";
+import { normalizeDynamic, normalizeMethod, parseHost } from "./utils";
+import { lookupHost } from "../fingerprints/registry";
 
 interface PatternDef {
   sdk: string;
@@ -18,8 +19,12 @@ const PATTERN_DEFS: PatternDef[] = [
     methodGroup: 2,
   },
   {
+    // Single-line fetch with no options object: fetch("url") or fetch("url"  )
+    // Multi-line fetch("url", {...}) is intentionally not matched here so we
+    // don't emit a GET fallback for what may actually be POST/PUT/etc. AST
+    // handles multi-line fetch options structurally.
     sdk: "fetch",
-    regex: /fetch\(\s*['"`]([^'"`\n]+)['"`]/gi,
+    regex: /fetch\(\s*['"`]([^'"`\n]+)['"`]\s*\)/gi,
     urlGroup: 1,
     methodGroup: null,
   },
@@ -123,13 +128,21 @@ function mapPatternMatch(def: PatternDef, match: RegExpExecArray): ApiCallMatch 
   const rawUrl = match[def.urlGroup];
   const endpoint = def.normalizeUrl ? def.normalizeUrl(rawUrl) : rawUrl;
 
+  // Host-based provider attribution: when the URL's host maps to a known
+  // provider in the fingerprint registry, emit that provider id instead of
+  // the generic "generic-http" tag. Mirrors the AST scanner's behaviour and
+  // is exercised by the AST↔regex parity test (issue #76).
+  const host = parseHost(endpoint);
+  const resolvedProvider = host ? lookupHost(host) ?? "generic-http" : "generic-http";
+
   return {
     kind: "http",
     sdk: def.sdk,
-    provider: "generic-http",
+    provider: resolvedProvider,
     method,
     endpoint,
     resource: endpoint,
+    host,
     rawMatch: match[0],
   };
 }
