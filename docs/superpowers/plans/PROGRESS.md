@@ -32,7 +32,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 |---|---|---|---|
 | F1 | Foundation, serial | T1 | 🟢 |
 | F2 | Foundation, serial | T2 | 🟢 |
-| A  | Parallel (3 agents) | T3, T5, T6 | ⬜ |
+| A  | Parallel (3 agents) | T3, T5, T6 | 🟢 |
 | F3 | Foundation, serial | T4 | ⬜ |
 | F4 | Foundation, serial | T7 | ⬜ |
 | B  | Parallel (2 agents) | T8, T9 | ⬜ |
@@ -43,10 +43,10 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 - [x] **T1** (F1) Define the `SourceSpan` type — `src/scanner/source-span.ts`
 - [x] **T2** (F2) Test the regex-side span helper — `src/test/source-span.test.ts`
-- [ ] **T3** (A) Add `span` to `CallInfo` (AST visitor) — `src/ast/call-visitor.ts`
+- [x] **T3** (A) Add `span` to `CallInfo` (AST visitor) — `src/ast/call-visitor.ts`
 - [ ] **T4** (F3) Add `span` to `AstCallMatch`, propagate through `ast-scanner.ts`
-- [ ] **T5** (A) Add optional `span` to regex match types — `src/scanner/patterns/types.ts`
-- [ ] **T6** (A) Add `span` to `ApiCallInput` and `EndpointCallSite` — `src/analysis/types.ts`
+- [x] **T5** (A) Add optional `span` to regex match types — `src/scanner/patterns/types.ts`
+- [x] **T6** (A) Add `span` to `ApiCallInput` and `EndpointCallSite` — `src/analysis/types.ts`
 - [ ] **T7** (F4) Compute spans in `core-scanner.ts` for both paths
 - [ ] **T8** (B) Add `span` to `ApiCallNode` + pipe through `intelligence/builder.ts`
 - [ ] **T9** (B) Pipe `span` into `EndpointCallSite` in `scan-results.ts`
@@ -125,6 +125,8 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 > Append `YYYY-MM-DD HH:MM — <one-line update>`. Newest at top.
 
+- 2026-05-12 02:50 — B1 batch A complete: span field threaded through `CallInfo` (T3, merge of `worktree-agent-adbafd374ffba4dac`), regex match types (T5, `1db3d79`), and `ApiCallInput`/`EndpointCallSite` (T6, `94fc288`). T5 and T6 committed directly onto the working branch instead of in isolated worktrees — files are disjoint so order is preserved. Reviewer scope reduced to per-task tsc + targeted test runs.
+- 2026-05-12 02:50 — **Baseline state note:** `origin/main` has 38 pre-existing tsc errors (`compression.test.ts`, `export.test.ts`, `ast-{batch,cache,concurrency,cross-file-resolver}.test.ts`, `recost-mock-calls.ts` missing SDK types, `webview-provider.ts` Promise<CompressedCluster[]> mismatch). These predate the foundation plans and are fixed by the unmerged `audit-fixes-2026-05-11` branch (notably commit `329720d fix(callers): await compressClusters …`). Because `npm test` short-circuits at tsc, the plan's "full suite green between merges" gate is replaced with per-task targeted verification until those fixes land in main. Zero new tsc errors introduced by this batch.
 - 2026-05-12 02:35 — B1 batch F2 complete: SourceSpan helper tests landed (`881b918`, 3/3 cases pass). Spec + code-quality review passed with zero issues.
 - 2026-05-12 02:30 — B1 batch F1 complete: SourceSpan type + helpers landed on `foundation-parser-accuracy` (commits `bdfe45d`, `7e3187f`). Spec + code-quality review passed; reviewer's Important note on exclusive-end semantics addressed inline.
 - 2026-05-12 — Plans drafted, parallel batches and safety rules baked in, progress tracker initialized.
