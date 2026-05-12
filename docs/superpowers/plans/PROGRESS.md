@@ -18,7 +18,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 | Plan | Issue | Status | Plan File |
 |---|---|---|---|
-| **B1** Span-based source locations | [#80](https://github.com/recost-dev/extension/issues/80) | ⬜ | [2026-05-12-b1-span-based-source-locations.md](2026-05-12-b1-span-based-source-locations.md) |
+| **B1** Span-based source locations | [#80](https://github.com/recost-dev/extension/issues/80) | 🟡 | [2026-05-12-b1-span-based-source-locations.md](2026-05-12-b1-span-based-source-locations.md) |
 | **B3** Stable endpoint IDs | [#82](https://github.com/recost-dev/extension/issues/82) | ⬜ | [2026-05-12-b3-stable-endpoint-ids.md](2026-05-12-b3-stable-endpoint-ids.md) |
 | **A4** AST↔regex parity | [#76](https://github.com/recost-dev/extension/issues/76) | ⬜ | [2026-05-12-a4-ast-regex-parity.md](2026-05-12-a4-ast-regex-parity.md) |
 
@@ -30,7 +30,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 | Batch | Mode | Tasks | Status |
 |---|---|---|---|
-| F1 | Foundation, serial | T1 | ⬜ |
+| F1 | Foundation, serial | T1 | 🟢 |
 | F2 | Foundation, serial | T2 | ⬜ |
 | A  | Parallel (3 agents) | T3, T5, T6 | ⬜ |
 | F3 | Foundation, serial | T4 | ⬜ |
@@ -41,7 +41,7 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 ### Tasks
 
-- [ ] **T1** (F1) Define the `SourceSpan` type — `src/scanner/source-span.ts`
+- [x] **T1** (F1) Define the `SourceSpan` type — `src/scanner/source-span.ts`
 - [ ] **T2** (F2) Test the regex-side span helper — `src/test/source-span.test.ts`
 - [ ] **T3** (A) Add `span` to `CallInfo` (AST visitor) — `src/ast/call-visitor.ts`
 - [ ] **T4** (F3) Add `span` to `AstCallMatch`, propagate through `ast-scanner.ts`
@@ -125,4 +125,5 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 
 > Append `YYYY-MM-DD HH:MM — <one-line update>`. Newest at top.
 
+- 2026-05-12 02:30 — B1 batch F1 complete: SourceSpan type + helpers landed on `foundation-parser-accuracy` (commits `bdfe45d`, `7e3187f`). Spec + code-quality review passed; reviewer's Important note on exclusive-end semantics addressed inline.
 - 2026-05-12 — Plans drafted, parallel batches and safety rules baked in, progress tracker initialized.
