@@ -13,7 +13,7 @@ import {
   getDefaultChatSelection,
   type ChatProviderId,
 } from "./chat";
-import type { WebviewMessage, HostMessage, KeyServiceId, KeyStatusSummary, ProjectIdStatusSummary } from "./messages";
+import type { WebviewMessage, HostMessage, KeyServiceId, ProjectIdStatusSummary } from "./messages";
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
 import { runSimulation, StaticDataSource } from "./simulator";
 import type { SimulatorInput } from "./simulator/types";
@@ -27,18 +27,15 @@ import { buildExportContext, formatAsMarkdown } from "./intelligence/export";
 import { estimateLocalMonthlyCost } from "./intelligence/cost-utils";
 import {
   buildKeyFingerprint,
-  buildKeyStatusSummary,
   getKeyService,
-  listKeyServices,
-  maskKeyPreview,
   readStoredSecret,
   resolveCurrentKeyValue,
-  validateServiceKey,
   type PersistedKeyValidationSnapshot,
 } from "./key-management";
 import { resolveWorkspaceFilePathSafely } from "./workspace-file-access";
 import { getOutputChannel } from "./output";
 import { ChatHandler } from "./webview/chat-handler";
+import { KeyManagementHandler } from "./webview/key-management-handler";
 
 async function resolveWorkspaceFileSafely(
   workspaceFolder: vscode.WorkspaceFolder,
@@ -607,7 +604,6 @@ export async function dispatchWebviewMessage(
 
 export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "recost.sidebarView";
-  private static readonly KEY_VALIDATION_STATE_STORAGE_KEY = "recost.keyValidationState";
   private static readonly MANUAL_PROJECT_ID_STORAGE_KEY = "recost.manualProjectId";
   private static readonly MANUAL_PROJECT_ID_VALIDATION_STORAGE_KEY = "recost.manualProjectIdValidation";
 
@@ -628,8 +624,8 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
 
   // Chat state
   private readonly chatHandler: ChatHandler;
+  private readonly keyManagementHandler: KeyManagementHandler;
   private readonly outputChannel: vscode.OutputChannel;
-  private readonly keyValidationState = new Map<KeyServiceId, PersistedKeyValidationSnapshot>();
   private readonly projectIdCheckingState = new Set<string>();
 
   private async sendProjectIdStatus(): Promise<void> {
@@ -699,7 +695,16 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     this.outputChannel = vscode.window.createOutputChannel("ReCost AI Review");
     this.context.subscriptions.push(this.outputChannel);
     this.savedScenarios = (this.context.globalState.get<import("./simulator/types").SavedScenario[]>("recost.simulatorScenarios")) ?? [];
-    this.restoreKeyValidationState();
+    this.keyManagementHandler = new KeyManagementHandler({
+      postMessage: (m) => this.postMessage(m),
+      context: this.context,
+      outputChannel: this.outputChannel,
+      openKeys: (id) => this.openKeys(id),
+      getManualProjectId: () => this.getManualProjectId(),
+      clearProjectIdValidationState: () => this.clearProjectIdValidationState(),
+      sendProjectIdStatus: () => this.sendProjectIdStatus(),
+      validateManualProjectId: () => this.validateManualProjectId(),
+    });
     this.chatHandler = new ChatHandler({
       postMessage: (m) => this.postMessage(m),
       outputChannel: this.outputChannel,
@@ -778,13 +783,11 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private getKeyServiceIdForProvider(providerId: string): KeyServiceId | undefined {
-    return listKeyServices().find((service) => service.providerId === providerId)?.serviceId;
+    return this.keyManagementHandler.getKeyServiceIdForProvider(providerId);
   }
 
   private async getStoredProviderApiKey(providerId: string): Promise<string | undefined> {
-    const serviceId = this.getKeyServiceIdForProvider(providerId);
-    if (!serviceId) return undefined;
-    return readStoredSecret(getKeyService(serviceId), this.context.secrets);
+    return this.keyManagementHandler.getStoredProviderApiKey(providerId);
   }
 
   private sendChatConfig(providerId?: ChatProviderId, model?: string) {
@@ -961,109 +964,24 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     return { projectId: await this.getOrCreateProject(rcApiKey), source: "auto" };
   }
 
-  private async buildAllKeyStatuses(): Promise<KeyStatusSummary[]> {
-    const services = listKeyServices();
-    return Promise.all(
-      services.map((service) =>
-        this.buildKeyStatus(service)
-      )
-    );
-  }
-
   private async sendAllKeyStatuses(focusServiceId?: KeyServiceId) {
-    this.postMessage({ type: "allKeyStatuses", statuses: await this.buildAllKeyStatuses(), focusServiceId });
+    return this.keyManagementHandler.sendAllKeyStatuses(focusServiceId);
   }
 
   private async sendKeyStatusUpdate(serviceId: KeyServiceId, focusServiceId?: KeyServiceId) {
-    const service = getKeyService(serviceId);
-    const status = await this.buildKeyStatus(service);
-    this.postMessage({ type: "keyStatusUpdated", status, focusServiceId });
+    return this.keyManagementHandler.sendKeyStatusUpdate(serviceId, focusServiceId);
   }
 
   private async clearServiceKey(serviceId: KeyServiceId) {
-    const service = getKeyService(serviceId);
-    if (service.secretStorageKey) {
-      await this.context.secrets.delete(service.secretStorageKey);
-    }
-    if (serviceId === "openai") {
-      await this.context.secrets.delete("recost.openaiApiKey");
-    }
-    await this.clearValidationState(serviceId);
-    await this.sendKeyStatusUpdate(serviceId);
-    if (serviceId === "recost") {
-      await this.clearProjectIdValidationState();
-      await this.sendProjectIdStatus();
-    }
+    return this.keyManagementHandler.clearServiceKey(serviceId);
   }
 
   private async setServiceKey(serviceId: KeyServiceId, value: string) {
-    const service = getKeyService(serviceId);
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.postMessage({ type: "keyActionError", serviceId, message: "API key must not be empty." });
-      return;
-    }
-    if (!service.secretStorageKey) {
-      this.postMessage({ type: "keyActionError", serviceId, message: `${service.displayName} does not use stored API keys in this extension.` });
-      return;
-    }
-    if (serviceId === "openai" && !/^sk-/.test(trimmed)) {
-      this.postMessage({ type: "keyActionError", serviceId, message: 'OpenAI API keys must start with "sk-".' });
-      return;
-    }
-    await this.context.secrets.store(service.secretStorageKey, trimmed);
-    if (serviceId === "openai") {
-      await this.context.secrets.store("recost.openaiApiKey", trimmed);
-    }
-    await this.clearValidationState(serviceId);
-    await this.sendKeyStatusUpdate(serviceId);
-    await this.testServiceKey(serviceId);
-    if (serviceId === "recost" && this.getManualProjectId()) {
-      await this.validateManualProjectId();
-    }
+    return this.keyManagementHandler.setServiceKey(serviceId, value);
   }
 
   private async testServiceKey(serviceId: KeyServiceId) {
-    const service = getKeyService(serviceId);
-    const current = await this.buildKeyStatus(service);
-    if (current.source === "missing") {
-      this.postMessage({ type: "keyActionError", serviceId, message: `${service.displayName} key is missing.` });
-      return;
-    }
-    this.postMessage({
-      type: "keyStatusUpdated",
-      status: { ...current, state: "checking", message: undefined },
-      focusServiceId: serviceId,
-    });
-    try {
-      const value = await resolveCurrentKeyValue(service, this.context.secrets);
-      if (!value) {
-        this.postMessage({ type: "keyActionError", serviceId, message: `${service.displayName} key is missing.` });
-        return;
-      }
-      const validation = await validateServiceKey(service, value);
-      await this.setValidationState(serviceId, {
-        ...validation,
-        keyFingerprint: buildKeyFingerprint(value),
-      });
-      await this.sendKeyStatusUpdate(serviceId, serviceId);
-      if (serviceId === "recost") {
-        await vscode.commands.executeCommand("setContext", "recost.keyOnline", validation.state === "valid");
-      }
-    } catch (error) {
-      const previous = this.keyValidationState.get(serviceId);
-      await this.sendKeyStatusUpdate(serviceId, serviceId);
-      const message = error instanceof Error ? error.message : `Unable to test ${service.displayName} key.`;
-      if (previous) {
-        this.postMessage({ type: "keyActionError", serviceId, message });
-      } else {
-        this.postMessage({
-          type: "keyStatusUpdated",
-          status: { ...current, message, maskedPreview: current.maskedPreview ?? maskKeyPreview(undefined) },
-          focusServiceId: serviceId,
-        });
-      }
-    }
+    return this.keyManagementHandler.testServiceKey(serviceId);
   }
 
   private async handleMessage(message: WebviewMessage): Promise<void> {
@@ -1452,53 +1370,12 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     return readStoredSecret(getKeyService("recost"), this.context.secrets);
   }
 
-  private restoreKeyValidationState() {
-    const stored =
-      this.context.globalState.get<Partial<Record<KeyServiceId, PersistedKeyValidationSnapshot>>>(
-        ReCostSidebarProvider.KEY_VALIDATION_STATE_STORAGE_KEY
-      ) ?? {};
-    for (const [serviceId, snapshot] of Object.entries(stored) as [KeyServiceId, PersistedKeyValidationSnapshot | undefined][]) {
-      if (snapshot) {
-        this.keyValidationState.set(serviceId, snapshot);
-      }
-    }
-  }
-
-  private async persistKeyValidationState() {
-    await this.context.globalState.update(
-      ReCostSidebarProvider.KEY_VALIDATION_STATE_STORAGE_KEY,
-      Object.fromEntries(this.keyValidationState.entries())
-    );
-  }
-
   private async clearValidationState(serviceId: KeyServiceId) {
-    this.keyValidationState.delete(serviceId);
-    await this.persistKeyValidationState();
+    return this.keyManagementHandler.clearValidationState(serviceId);
   }
 
   private async setValidationState(serviceId: KeyServiceId, snapshot: PersistedKeyValidationSnapshot) {
-    this.keyValidationState.set(serviceId, snapshot);
-    await this.persistKeyValidationState();
-  }
-
-  private async getValidationSnapshot(serviceId: KeyServiceId): Promise<PersistedKeyValidationSnapshot | undefined> {
-    const snapshot = this.keyValidationState.get(serviceId);
-    if (!snapshot) return undefined;
-    const service = getKeyService(serviceId);
-    const currentValue = await resolveCurrentKeyValue(service, this.context.secrets);
-    if (!currentValue || snapshot.keyFingerprint !== buildKeyFingerprint(currentValue)) {
-      await this.clearValidationState(serviceId);
-      return undefined;
-    }
-    return snapshot;
-  }
-
-  private async buildKeyStatus(service: ReturnType<typeof getKeyService>): Promise<KeyStatusSummary> {
-    return buildKeyStatusSummary(
-      service,
-      this.context.secrets,
-      await this.getValidationSnapshot(service.serviceId)
-    );
+    return this.keyManagementHandler.setValidationState(serviceId, snapshot);
   }
 
   private handleChat(text: string, provider: string, model: string) {
