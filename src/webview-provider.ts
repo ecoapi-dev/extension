@@ -15,7 +15,6 @@ import {
 } from "./chat";
 import type { WebviewMessage, HostMessage, KeyServiceId, ProjectIdStatusSummary } from "./messages";
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
-import { runSimulation, StaticDataSource } from "./simulator";
 import type { SimulatorInput } from "./simulator/types";
 import { classifyEndpointScope, detectEndpointProvider } from "./scanner/endpoint-classification";
 import { classifyPricing, calculateSavings } from "./scan-results";
@@ -36,6 +35,7 @@ import { resolveWorkspaceFilePathSafely } from "./workspace-file-access";
 import { getOutputChannel } from "./output";
 import { ChatHandler } from "./webview/chat-handler";
 import { KeyManagementHandler } from "./webview/key-management-handler";
+import { SimulationHandler } from "./webview/simulation-handler";
 
 async function resolveWorkspaceFileSafely(
   workspaceFolder: vscode.WorkspaceFolder,
@@ -618,13 +618,10 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
   private lastApiCalls: ApiCallInput[] = [];
   private lastFindings: Awaited<ReturnType<typeof detectLocalWastePatterns>> = [];
 
-  // Simulator state (persisted across sessions)
-  private savedScenarios: import("./simulator/types").SavedScenario[] = [];
-  private scenarioPersistQueue: Promise<void> = Promise.resolve();
-
   // Chat state
   private readonly chatHandler: ChatHandler;
   private readonly keyManagementHandler: KeyManagementHandler;
+  private readonly simulationHandler: SimulationHandler;
   private readonly outputChannel: vscode.OutputChannel;
   private readonly projectIdCheckingState = new Set<string>();
 
@@ -694,7 +691,11 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     this.context = context;
     this.outputChannel = vscode.window.createOutputChannel("ReCost AI Review");
     this.context.subscriptions.push(this.outputChannel);
-    this.savedScenarios = (this.context.globalState.get<import("./simulator/types").SavedScenario[]>("recost.simulatorScenarios")) ?? [];
+    this.simulationHandler = new SimulationHandler({
+      postMessage: (m) => this.postMessage(m),
+      context: this.context,
+      getLastEndpoints: () => this.lastEndpoints,
+    });
     this.keyManagementHandler = new KeyManagementHandler({
       postMessage: (m) => this.postMessage(m),
       context: this.context,
@@ -998,7 +999,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       applyFix: (code, file, line) => this.handleApplyFix(code, file, line),
       openFile: (file, line) => this.handleOpenFile(file, line),
       openDashboard: () => this.handleOpenDashboard(),
-      runSimulation: (input) => { this.handleRunSimulation(input); },
+      runSimulation: (input) => { this.simulationHandler.handleRunSimulation(input); },
       getAllKeyStatuses: () => this.sendAllKeyStatuses(),
       getProjectIdStatus: () => this.sendProjectIdStatus(),
       setKey: (serviceId, value) => this.setServiceKey(serviceId, value),
@@ -1048,29 +1049,6 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       const message = err instanceof Error ? err.message : "Failed to generate AI context";
       vscode.window.showErrorMessage(`ReCost: ${message}`);
     }
-  }
-
-  private handleRunSimulation(input: SimulatorInput): void {
-    try {
-      if (this.lastEndpoints.length === 0) {
-        this.postMessage({ type: "simulationError", message: "Run a scan first to use the simulator." });
-        return;
-      }
-      const source = new StaticDataSource(this.lastEndpoints);
-      const result = runSimulation(source, input);
-      this.postMessage({ type: "simulationResult", result });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Simulation failed";
-      this.postMessage({ type: "simulationError", message });
-    }
-  }
-
-  private async persistScenarios(next: import("./simulator/types").SavedScenario[]): Promise<void> {
-    this.savedScenarios = next;
-    this.scenarioPersistQueue = this.scenarioPersistQueue
-      .catch(() => {})
-      .then(() => this.context.globalState.update("recost.simulatorScenarios", next));
-    await this.scenarioPersistQueue;
   }
 
   private async handleStartScan() {
