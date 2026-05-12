@@ -207,7 +207,9 @@ run("formatAsMarkdown and formatAsJSON render stable onboarding output", () => {
         },
       ],
       keyRisks: ["Unbounded loop API calls", "Rate-limit risk"],
+      costLeaks: [],
     },
+    providerSummary: [],
     clusters,
   };
 
@@ -605,7 +607,9 @@ run("formatAsMarkdown clarifies cluster-vs-primary providers and softens heurist
         },
       ],
       keyRisks: ["Potential missing caching on hot path"],
+      costLeaks: [],
     },
+    providerSummary: [],
     clusters: [
       {
         id: "cluster:src/chat/providers/xai.ts",

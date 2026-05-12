@@ -203,6 +203,7 @@ export class ChatHandler {
 
   private redactSensitiveText(value: string): string {
     return value
+      .replace(/\brc-[a-zA-Z0-9_-]{8,}\b/g, "[REDACTED_RECOST_KEY]")
       .replace(/sk-[a-zA-Z0-9]{16,}/g, "[REDACTED_OPENAI_KEY]")
       .replace(/(api[_-]?key|token|secret)\s*[:=]\s*["'`][^"'`\n]{8,}["'`]/gi, "$1=[REDACTED]")
       .replace(/(authorization\s*:\s*["'`]bearer\s+)[^"'`\n]+/gi, "$1[REDACTED]");

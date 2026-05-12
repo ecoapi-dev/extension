@@ -527,7 +527,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       applyFix: (code, file, line) => this.handleApplyFix(code, file, line),
       openFile: (file, line) => this.handleOpenFile(file, line),
       openDashboard: () => this.handleOpenDashboard(),
-      runSimulation: (input) => { this.simulationHandler.handleRunSimulation(input); },
+      runSimulation: (input) => this.simulationHandler.handleRunSimulation(input),
       getAllKeyStatuses: () => this.sendAllKeyStatuses(),
       getProjectIdStatus: () => this.sendProjectIdStatus(),
       setKey: (serviceId, value) => this.setServiceKey(serviceId, value),

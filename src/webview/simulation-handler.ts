@@ -40,10 +40,12 @@ export class SimulationHandler {
   }
 
   public async persistScenarios(next: SavedScenario[]): Promise<void> {
-    this.savedScenarios = next;
     this.scenarioPersistQueue = this.scenarioPersistQueue
       .catch(() => {})
-      .then(() => this.ctx.context.globalState.update(SimulationHandler.SCENARIOS_STORAGE_KEY, next));
+      .then(async () => {
+        await this.ctx.context.globalState.update(SimulationHandler.SCENARIOS_STORAGE_KEY, next);
+        this.savedScenarios = next;
+      });
     await this.scenarioPersistQueue;
   }
 

@@ -171,15 +171,16 @@ function buildAggressiveSuggestions(
     );
     if (suppressedByWaste) continue;
 
+    const severity = chooseSeverity(endpoint.status, endpoint.monthlyCost);
     extras.push({
       id: `local-${endpoint.id}-${type}`,
       projectId: endpoint.projectId,
       scanId: endpoint.scanId,
       type,
-      severity: chooseSeverity(endpoint.status, endpoint.monthlyCost),
+      severity,
       affectedEndpoints: [endpoint.id],
       affectedFiles: endpoint.files,
-      estimatedMonthlySavings: calculateSavings(type, "medium", endpoint.monthlyCost),
+      estimatedMonthlySavings: calculateSavings(type, severity, endpoint.monthlyCost),
       description: buildAggressiveDescription(endpoint, type),
       codeFix: "",
       source: "local-rule",
@@ -565,8 +566,9 @@ export class ScanPublishingHandler {
 
       const publishLocalOnlyResults = (localProjectId: string, localScanId: string) => {
         const endpoints = mergeRemoteAndLocalEndpoints([], apiCalls, localProjectId, localScanId);
+        const aggressiveSuggestions = buildAggressiveSuggestions(endpoints, [], localWasteFindings);
         const mergedSuggestions = mergeLocalWasteFindings(
-          [],
+          aggressiveSuggestions,
           localWasteFindings,
           endpoints,
           localProjectId,
