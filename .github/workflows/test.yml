@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install webview deps
+        run: cd webview && npm ci
+
+      - name: Build extension
+        run: npm run build:ext
+
+      - name: Run scanner + intelligence tests
+        run: npm test
+
+      - name: Security secret scan
+        run: npm run security:scan
