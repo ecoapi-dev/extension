@@ -658,7 +658,7 @@ export async function scanSourceWithAst(
 
   // ── 9. Second pass: callback / iteration patterns ───────────────────────────
   for (const callInfo of allCalls) {
-    const { methodChain, args, line, column, node, span } = callInfo;
+    const { methodChain, args, line, column, span } = callInfo;
     const parts = methodChain.split(".");
     const lastMethod = parts[parts.length - 1];
 
@@ -717,7 +717,7 @@ export async function scanSourceWithAst(
 
   // ── 10. Re-process middleware registrations now that fnApiCalls is built ─────
   for (const callInfo of allCalls) {
-    const { methodChain, args, line, column, node, span } = callInfo;
+    const { methodChain, args, line, column, span } = callInfo;
     if (!isMiddlewareCall(methodChain)) continue;
     for (const arg of args) {
       if (arg.type !== "identifier") continue;
