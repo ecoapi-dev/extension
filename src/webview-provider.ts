@@ -673,6 +673,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
 
   // Simulator state (persisted across sessions)
   private savedScenarios: import("./simulator/types").SavedScenario[] = [];
+  private scenarioPersistQueue: Promise<void> = Promise.resolve();
 
   // Chat state
   private chatHistory: ChatMessage[] = [];
@@ -1178,6 +1179,14 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       const message = err instanceof Error ? err.message : "Simulation failed";
       this.postMessage({ type: "simulationError", message });
     }
+  }
+
+  private async persistScenarios(next: import("./simulator/types").SavedScenario[]): Promise<void> {
+    this.savedScenarios = next;
+    this.scenarioPersistQueue = this.scenarioPersistQueue
+      .catch(() => {})
+      .then(() => this.context.globalState.update("eco.simulatorScenarios", next));
+    await this.scenarioPersistQueue;
   }
 
   private async handleStartScan() {
