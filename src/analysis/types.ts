@@ -1,6 +1,10 @@
+import type { SourceSpan } from "../scanner/source-span";
+
 export interface ApiCallInput {
   file: string;
   line: number;
+  /** Full span of the call expression. Optional only because synthetic test inputs may omit it. */
+  span?: SourceSpan;
   method: string;
   url: string;
   library?: string;
@@ -59,6 +63,8 @@ export interface EndpointRecord {
 export interface EndpointCallSite {
   file: string;
   line: number;
+  /** Full span of the call expression. Optional only because synthetic test inputs may omit it. */
+  span?: SourceSpan;
   library: string;
   frequency?: string;
   // Enriched fields from AST engine
