@@ -1184,6 +1184,10 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
 
   private pruneSavedScenariosAgainst(currentEndpoints: EndpointRecord[]): void {
     if (this.savedScenarios.length === 0) return;
+    // Empty endpoint list means the scan returned nothing — likely a misconfigured
+    // workspace, all-internal scope, or empty glob. Don't wipe saved scenarios just
+    // because the current scan was barren; wait for a real comparison.
+    if (currentEndpoints.length === 0) return;
     const currentIds = new Set(currentEndpoints.map((e) => e.id));
     const compatible: import("./simulator/types").SavedScenario[] = [];
     let droppedCount = 0;
