@@ -28,17 +28,17 @@ interface SourceSpan {
 }
 ```
 
-### Investigation steps
-1. Tree-sitter nodes already expose `startPosition` / `endPosition`. Wire them through `AstCallMatch`.
-2. Regex pattern scanners need a way to compute end position — easiest: re-scan with a more permissive regex that captures the full call expression, or use the source text + a balanced-paren walker.
-3. Update `EndpointRecord` / `ApiCallNode` to carry a span field; keep `line` as a derived shortcut for back-compat.
-4. Update the webview Endpoints + Graph views to highlight the span, not just the line.
+### ~~Investigation steps~~ (resolved — see implementation plan `docs/superpowers/plans/2026-05-12-b1-span-based-source-locations.md`)
+1. ~~Tree-sitter nodes already expose `startPosition` / `endPosition`. Wire them through `AstCallMatch`.~~ Done in T3/T4.
+2. ~~Regex pattern scanners need a way to compute end position — easiest: re-scan with a more permissive regex that captures the full call expression, or use the source text + a balanced-paren walker.~~ Shipped with line-wide span as the documented compromise (T7); tight regex spans require a `matchLine` API change tracked as future work.
+3. ~~Update `EndpointRecord` / `ApiCallNode` to carry a span field; keep `line` as a derived shortcut for back-compat.~~ `EndpointCallSite.span?` (T6/T9) and `ApiCallNode.span` (T8) both populated; `line` preserved alongside.
+4. ~~Update the webview Endpoints + Graph views to highlight the span, not just the line.~~ Reveal-by-span landed in `webview-provider`'s `openFile` handler and `ResultsPage` (T10).
 
 ### Acceptance criteria
-- [ ] `EndpointRecord` exposes `span: SourceSpan` with all four numbers populated.
-- [ ] Multi-line calls (>3 lines) have `endLine > startLine`.
-- [ ] Clicking a detection in the webview opens the editor with the span selected, not just the line scrolled into view.
-- [ ] Existing tests assertions on `line` continue to work (derive from span).
+- [x] `EndpointRecord` exposes `span: SourceSpan` with all four numbers populated. *(via `EndpointCallSite.span?` — optional only because legacy/synthetic inputs may omit it.)*
+- [x] Multi-line calls (>3 lines) have `endLine > startLine`. *(AST path — verified by `src/test/ast-call-visitor.test.ts` "span: multi-line call has endLine > startLine".)*
+- [ ] Clicking a detection in the webview opens the editor with the span selected, not just the line scrolled into view. *(Code landed in T10 commit `69ca79d`; **pending manual EDH verification** — F5 the dev host, scan a workspace with a multi-line OpenAI call, click the endpoint row, confirm full-call selection.)*
+- [x] Existing tests assertions on `line` continue to work (derive from span). *(`line` is preserved alongside `span` everywhere; all affected unit tests pass.)*
 
 ### Files
 - `src/ast/call-visitor.ts`
@@ -47,6 +47,8 @@ interface SourceSpan {
 - `src/scanner/types.ts` (or wherever `EndpointRecord` is defined)
 - `src/intelligence/types.ts` (ApiCallNode)
 - `webview/src/components/ResultsPage.tsx` (open-file IPC)
+
+✅ Landed: 2026-05-12 on branch `foundation-parser-accuracy`. Acceptance criteria 1, 2, 4 automated-verified; #3 awaiting manual EDH check.
 
 ---
 
