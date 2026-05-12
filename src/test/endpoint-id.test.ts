@@ -60,6 +60,13 @@ const base = {
     );
   });
 
+  await run("file path normalization: repeated ./ prefix collapses fully", () => {
+    assert.equal(
+      computeEndpointId({ ...base, filePath: "src/services/chat.ts" }),
+      computeEndpointId({ ...base, filePath: "././src/services/chat.ts" })
+    );
+  });
+
   await run("URLs differing only by numeric ID produce the same endpoint ID", () => {
     const a = computeEndpointId({ ...base, url: "https://api.x.com/users/123" });
     const b = computeEndpointId({ ...base, url: "https://api.x.com/users/456" });

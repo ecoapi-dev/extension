@@ -1,3 +1,4 @@
+import { normalizeRepoPath } from "../intelligence/path-utils";
 import { maskUrlDynamicParts } from "./url-template";
 
 /** Inputs are intentionally narrow — line/column/timing fields are excluded. */
@@ -7,10 +8,6 @@ export interface EndpointIdInput {
   filePath: string;
   enclosingFunction: string | null | undefined;
   url: string | null | undefined;
-}
-
-function normalizeFilePath(filePath: string): string {
-  return filePath.replace(/\\/g, "/").replace(/^\.\/+/, "");
 }
 
 /** FNV-1a 32-bit. Same algorithm as `intelligence/builder.ts:makeStableFingerprint`. */
@@ -34,7 +31,7 @@ export function computeEndpointId(input: EndpointIdInput): string {
   const parts = [
     input.provider ?? "null",
     input.methodSignature ?? "null",
-    normalizeFilePath(input.filePath),
+    normalizeRepoPath(input.filePath),
     input.enclosingFunction ?? "null",
     input.url ? maskUrlDynamicParts(input.url) : "null",
   ];
