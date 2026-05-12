@@ -56,6 +56,21 @@ async function run(name: string, fn: () => Promise<void>): Promise<void> {
     assert.ok(found, "must find openai.chat.completions.create");
     assert.equal(found!.rootIdentifier, "openai");
     assert.equal(found!.line, 2);
+    assert.equal(found!.span.startLine, 2);
+    assert.ok(found!.span.endColumn >= found!.span.startColumn);
+  });
+
+  await run("span: multi-line call has endLine > startLine", async () => {
+    const src = `
+const r = await openai.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "hi" }],
+});
+`;
+    const found = find(await calls(src), "openai.chat.completions.create");
+    assert.ok(found, "must find call");
+    assert.equal(found!.span.startLine, 2);
+    assert.ok(found!.span.endLine > found!.span.startLine, "multi-line call must span >1 line");
   });
 
   await run("OpenAI SDK: embeddings.create is extracted", async () => {

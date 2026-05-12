@@ -6,6 +6,7 @@
  * excluded by the parser itself, so no extra filtering is needed here).
  */
 import type { Tree, SyntaxNode } from "./parser-loader";
+import type { SourceSpan } from "../scanner/source-span";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -16,10 +17,12 @@ export interface CallInfo {
   rootIdentifier: string;
   /** Raw argument AST nodes (caller can inspect for URL strings, etc.) */
   args: SyntaxNode[];
-  /** 1-based line number of the call */
+  /** 1-based line number of the call start (kept for back-compat). */
   line: number;
-  /** 0-based column of the call */
+  /** 0-based column of the call start (kept for back-compat). */
   column: number;
+  /** Full source span of the entire call expression. */
+  span: SourceSpan;
   /** The call_expression AST node — used by callers for ancestor traversal. */
   node: SyntaxNode;
 }
@@ -106,8 +109,14 @@ function collectCalls(node: SyntaxNode, results: CallInfo[]): void {
           methodChain: segments.join("."),
           rootIdentifier: segments[0],
           args,
-          line: node.startPosition.row + 1, // convert 0-based to 1-based
+          line: node.startPosition.row + 1,
           column: node.startPosition.column,
+          span: {
+            startLine: node.startPosition.row + 1,
+            startColumn: node.startPosition.column,
+            endLine: node.endPosition.row + 1,
+            endColumn: node.endPosition.column,
+          },
           node,
         });
       }
