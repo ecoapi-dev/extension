@@ -22,6 +22,8 @@ import { lookupMethod, lookupHost } from "../scanner/fingerprints/registry";
 import { analyzeFrequency, frequencyToLoopContext } from "./frequency-analyzer";
 import type { SyntaxNode, Tree } from "./parser-loader";
 import type { FileReader } from "./import-resolver";
+import type { SourceSpan } from "../scanner/source-span";
+import { pointSpan } from "../scanner/source-span";
 export type { FrequencyClass } from "./frequency-analyzer";
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -44,6 +46,8 @@ export interface AstCallMatch {
   line: number;
   /** 0-based column */
   column: number;
+  /** Full source span of the call expression. */
+  span: SourceSpan;
   /** Structural frequency classification derived from AST context */
   frequency: import("./frequency-analyzer").FrequencyClass;
   /** Convenience: true when frequency implies repeated execution (loop/parallel/polling) */
@@ -478,10 +482,10 @@ export async function scanSourceWithAst(
 
         methodMatches.push(fp
           ? { kind: "sdk", provider, packageName, methodChain, confidence: 1.0, method: fp.httpMethod,
-              endpoint: fp.endpoint, line, column, frequency, loopContext: inLoop,
+              endpoint: fp.endpoint, line, column, span: callInfo.span, frequency, loopContext: inLoop,
               streaming: fp.streaming, batchCapable: fp.batchCapable, cacheCapable: fp.cacheCapable }
           : { kind: "sdk", provider, packageName, methodChain, confidence: provider ? 0.7 : 0.1,
-              line, column, frequency, loopContext: inLoop }
+              line, column, span: callInfo.span, frequency, loopContext: inLoop }
         );
       }
       if (methodMatches.length > 0) classInfo.methods.set(methodName, methodMatches);
@@ -565,7 +569,7 @@ export async function scanSourceWithAst(
               methodChain,
               method: httpMethod,
               endpoint: url,
-              line, column,
+              line, column, span: callInfo.span,
               frequency,
               loopContext: inLoop,
             });
@@ -590,7 +594,7 @@ export async function scanSourceWithAst(
               const key = `${m.provider}:${m.methodChain}:${line}`;
               if (!seen.has(key)) {
                 seen.add(key);
-                matches.push({ ...m, line, column, frequency, loopContext: inLoop || m.loopContext });
+                matches.push({ ...m, line, column, span: pointSpan(line, column), frequency, loopContext: inLoop || m.loopContext });
               }
             }
             continue;
@@ -615,11 +619,11 @@ export async function scanSourceWithAst(
     if (fp) {
       matches.push({
         kind: "sdk", provider, packageName, methodChain, confidence: 1.0, method: fp.httpMethod,
-        endpoint: fp.endpoint, line, column, frequency, loopContext: inLoop,
+        endpoint: fp.endpoint, line, column, span: callInfo.span, frequency, loopContext: inLoop,
         streaming: fp.streaming, batchCapable: fp.batchCapable, cacheCapable: fp.cacheCapable,
       });
     } else {
-      matches.push({ kind: "sdk", provider, packageName, methodChain, confidence: provider ? 0.7 : 0.1, line, column, frequency, loopContext: inLoop });
+      matches.push({ kind: "sdk", provider, packageName, methodChain, confidence: provider ? 0.7 : 0.1, line, column, span: callInfo.span, frequency, loopContext: inLoop });
     }
   }
 
@@ -638,10 +642,10 @@ export async function scanSourceWithAst(
       const fp = lookupMethod(provider, resolvedChain);
       fnMatches.push(fp
         ? { kind: "sdk", provider, packageName, methodChain, confidence: 1.0, method: fp.httpMethod,
-            endpoint: fp.endpoint, line, column, frequency: "single", loopContext: false,
+            endpoint: fp.endpoint, line, column, span: callInfo.span, frequency: "single", loopContext: false,
             streaming: fp.streaming, batchCapable: fp.batchCapable, cacheCapable: fp.cacheCapable }
         : { kind: "sdk", provider, packageName, methodChain, confidence: provider ? 0.7 : 0.1,
-            line, column, frequency: "single", loopContext: false }
+            line, column, span: callInfo.span, frequency: "single", loopContext: false }
       );
     }
     if (fnMatches.length > 0) fnApiCalls.set(fnName2, fnMatches);
@@ -673,7 +677,7 @@ export async function scanSourceWithAst(
             const key = `${m.provider}:${m.methodChain}:${line}:cb`;
             if (!seen.has(key)) {
               seen.add(key);
-              matches.push({ ...m, line, column, frequency: cbFreq, loopContext: true });
+              matches.push({ ...m, line, column, span: pointSpan(line, column), frequency: cbFreq, loopContext: true });
             }
           }
         }
@@ -694,7 +698,7 @@ export async function scanSourceWithAst(
                     const key = `${m.provider}:${m.methodChain}:${line}:nested`;
                     if (!seen.has(key)) {
                       seen.add(key);
-                      matches.push({ ...m, line, column, frequency: "parallel", loopContext: true });
+                      matches.push({ ...m, line, column, span: pointSpan(line, column), frequency: "parallel", loopContext: true });
                     }
                   }
                 }
@@ -720,7 +724,7 @@ export async function scanSourceWithAst(
             const key = `${m.provider}:${m.methodChain}:${line}:mw`;
             if (!seen.has(key)) {
               seen.add(key);
-              matches.push({ ...m, line, column, frequency: "single", loopContext: false, isMiddleware: true });
+              matches.push({ ...m, line, column, span: pointSpan(line, column), frequency: "single", loopContext: false, isMiddleware: true });
             }
           }
         }
