@@ -12,7 +12,7 @@ const execFileAsync = promisify(execFile);
 // <repo>/dist-test/benchmark/runner.js, so __dirname is <repo>/dist-test/benchmark.
 // Climb two levels to reach the repo root.
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const DEFAULT_FIXTURES = path.resolve(REPO_ROOT, "..", "extension_benchmark");
+const DEFAULT_FIXTURES = path.resolve(REPO_ROOT, "..", "extension-benchmark");
 const DEFAULT_BASELINE = path.resolve(REPO_ROOT, "benchmark", "baseline.json");
 const SMOKE_DIR = path.resolve(REPO_ROOT, "benchmark", "_smoke");
 const CLI_PATH = path.resolve(REPO_ROOT, "dist", "cli", "scan.js");
@@ -87,7 +87,7 @@ function printHelp(): void {
     "Usage: node dist-test/benchmark/runner.js [options]",
     "",
     "Options:",
-    "  --fixtures <dir>     Path to fixtures root (default: ../extension_benchmark)",
+    "  --fixtures <dir>     Path to fixtures root (default: ../extension-benchmark)",
     "  --baseline <path>    Path to baseline.json (default: benchmark/baseline.json)",
     "  --threshold <pp>     Allowed drop in percentage points (default: 1.0)",
     "  --update-baseline    Overwrite baseline.json with current metrics; do not gate",
@@ -104,7 +104,7 @@ async function findFixtures(root: string, smokeOnly: boolean): Promise<string[]>
       `Fixtures directory not found: ${root}`,
       "",
       "To get the v1 corpus:",
-      `  git clone https://github.com/recost-dev/extension_benchmark.git ${root}`,
+      `  git clone https://github.com/recost-dev/extension-benchmark.git ${root}`,
       "",
       "Or run smoke-only: npm run benchmark:smoke",
     ].join("\n"));

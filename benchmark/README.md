@@ -8,14 +8,14 @@ Hand-labeled accuracy gate for the scanner. Fails CI when precision or recall dr
 # Smoke (no clone, fast):
 npm run benchmark:smoke
 
-# Full (requires extension_benchmark cloned as sibling dir):
-git clone https://github.com/recost-dev/extension_benchmark.git ../extension_benchmark
+# Full (requires extension-benchmark cloned as sibling dir):
+git clone https://github.com/recost-dev/extension-benchmark.git ../extension-benchmark
 npm run benchmark
 ```
 
 ## Layout
 
-- `runner.ts` — orchestrates per-fixture scan + metric computation. Reads `--fixtures <dir>` (default `../extension_benchmark`).
+- `runner.ts` — orchestrates per-fixture scan + metric computation. Reads `--fixtures <dir>` (default `../extension-benchmark`).
 - `metrics.ts` — pure precision/recall math.
 - `schema.ts` — `expected.json` types + validator.
 - `report.ts` — console + markdown report formatting.
@@ -24,13 +24,13 @@ npm run benchmark
 
 ## CI
 
-`.github/workflows/benchmark.yml` runs on every PR. It reads `.benchmark-fixtures-sha` (repo root), clones `extension_benchmark` at that SHA, then runs `npm run benchmark`.
+`.github/workflows/benchmark.yml` runs on every PR. It reads `.benchmark-fixtures-sha` (repo root), clones `extension-benchmark` at that SHA, then runs `npm run benchmark`.
 
 ## Adding a fixture
 
-Fixtures live in `extension_benchmark`, not here. To add one:
+Fixtures live in `extension-benchmark`, not here. To add one:
 
-1. Open a PR in `recost-dev/extension_benchmark` with a new `<slug>/src/...`, `<slug>/expected.json`, `<slug>/FIXTURE.md`.
+1. Open a PR in `recost-dev/extension-benchmark` with a new `<slug>/src/...`, `<slug>/expected.json`, `<slug>/FIXTURE.md`.
 2. Once merged, bump `.benchmark-fixtures-sha` in `extension`.
 3. Run `npm run benchmark -- --update-baseline` locally and commit `baseline.json` if the new fixture changed it.
 
