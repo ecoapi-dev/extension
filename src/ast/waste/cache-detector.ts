@@ -63,8 +63,12 @@ const UNIVERSAL_HTTP_CHAIN = /^(?:fetch|axios(?:\.[a-z]+)?|got|ky|superagent(?:\
 function chainKey(match: AstCallMatch): string {
   if (UNIVERSAL_HTTP_CHAIN.test(match.methodChain)) {
     // Raw HTTP method chains carry no resource identity — bucket per URL so
-    // distinct endpoints don't collapse into one redundancy bucket.
-    return `${match.methodChain}::${match.endpoint ?? ""}`;
+    // distinct endpoints don't collapse into one redundancy bucket. Include the
+    // HTTP method too: `chainCount` is built from all matches (write-likes are
+    // skipped later), so without method in the key a POST /x mutation would
+    // inflate the count and falsely mark a sibling GET /x as redundant.
+    const httpMethod = (match.method ?? "").toUpperCase();
+    return `${match.methodChain}::${httpMethod}::${match.endpoint ?? ""}`;
   }
   return match.methodChain;
 }

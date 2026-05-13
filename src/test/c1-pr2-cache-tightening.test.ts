@@ -76,4 +76,14 @@ function buildFixtureAccess(fixtureDir: string, fileNames: string[]): ScanFileAc
       `expected 0 cache findings on POST /v1/embed, got ${cacheFindings.length}: ${JSON.stringify(cacheFindings.map(f => ({ file: f.affectedFile, line: f.line, ev: f.evidence })))}`
     );
   });
+
+  await run("TS GET and POST to the same URL do NOT trigger cache redundancy on the GET", async () => {
+    const access = buildFixtureAccess(fixtureDir, ["ts_get_post_same_url.ts"]);
+    const findings = await detectLocalWastePatternsInFiles(access);
+    const cacheFindings = findings.filter(f => f.type === "cache");
+    assert.equal(
+      cacheFindings.length, 0,
+      `expected 0 cache findings when sibling POST shares the URL with a GET, got ${cacheFindings.length}: ${JSON.stringify(cacheFindings.map(f => ({ file: f.affectedFile, line: f.line, ev: f.evidence })))}`
+    );
+  });
 })().catch((err) => { console.error(err); process.exit(1); });
