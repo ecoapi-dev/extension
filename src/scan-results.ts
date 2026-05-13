@@ -219,9 +219,6 @@ function mergeLocalWasteFindings(
   const locals: Suggestion[] = [];
   for (const finding of localFindings) {
     const fileEndpoints = endpoints.filter((ep) => ep.files.includes(finding.affectedFile));
-    console.log('[recost] fileEndpoints for', finding.affectedFile,
-      fileEndpoints.map(ep => ({ scope: ep.scope, provider: ep.provider, costModel: ep.costModel }))
-    );
     if (finding.confidence < 0.35) continue;
     const key = `${finding.description}::${finding.affectedFile}`;
     if (existingByDescAndFile.has(key)) continue;

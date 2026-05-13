@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist-test"
+  },
+  "include": ["benchmark/**/*", "src/test/benchmark-*.test.ts"],
+  "exclude": ["node_modules", "dist", "webview", "dashboard", "dashboard-dist", "benchmark/_smoke", "benchmark-fixtures"]
+}

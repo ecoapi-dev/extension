@@ -86,14 +86,17 @@ For each repo and overall:
 - [ ] Baseline committed; current metrics published in this doc once measured.
 - [ ] Regression gate prevents merging PRs that drop precision/recall.
 
-### Initial baseline (to be measured)
+### Initial baseline (measured 2026-05-13)
+
 | Metric | Value |
 |---|---|
-| Detection precision | TBD |
-| Detection recall | TBD |
-| Provider attribution accuracy | TBD |
-| Finding precision | TBD |
-| Finding recall | TBD |
+| Detection precision | 29.89% |
+| Detection recall | 42.62% |
+| Provider attribution accuracy | 79.59% |
+| Finding precision | 7.14% |
+| Finding recall | 33.33% |
+
+Baseline committed in `benchmark/baseline.json`. PRs that drop any metric by > 1pp fail CI.
 
 ### Files
 - New: `benchmark/` directory with fixtures + `expected.json` per fixture.

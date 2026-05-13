@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "fixtureSlug": "_smoke",
+  "endpoints": [
+    {
+      "file": "src/openai-helper.ts",
+      "function": "complete",
+      "line": 6,
+      "provider": "openai",
+      "method": "chat.completions.create",
+      "must_detect": true
+    },
+    {
+      "file": "src/openai-helper.ts",
+      "function": "embedBatch",
+      "line": 16,
+      "provider": "openai",
+      "method": "embeddings.create",
+      "must_detect": true
+    }
+  ],
+  "findings": [
+    {
+      "file": "src/openai-helper.ts",
+      "function": "embedBatch",
+      "line": 16,
+      "type": "batch",
+      "is_true_positive": true,
+      "notes": "Embedding call inside a for loop over items — should be batched."
+    }
+  ]
+}
