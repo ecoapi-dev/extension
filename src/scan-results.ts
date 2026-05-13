@@ -411,7 +411,7 @@ export function mergeRemoteAndLocalEndpoints(
           crossFileOrigin: call.crossFileOrigin ?? null,
         }],
         callsPerDay,
-        monthlyCost: estimateLocalMonthlyCost(provider, callsPerDay, call.methodSignature) ?? 0,
+        monthlyCost: estimateLocalMonthlyCost(provider, callsPerDay, call.methodSignature, call.url) ?? 0,
         status: call.frequency === "per-request" ? "n_plus_one_risk" : "normal",
         methodSignature: call.methodSignature,
         costModel: call.costModel,

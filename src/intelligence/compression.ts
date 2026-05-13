@@ -362,12 +362,15 @@ function buildFileSummary(filePath: string, snapshot: RepoIntelligenceSnapshot):
   const provider = context.providers[0] ?? null;
   const callsPerDay = estimateCallsPerDay(context.apiCalls);
   const methodSig = context.apiCalls[0]?.method ?? undefined;
+  // A7: pass the first matching call's URL so URL-path lookup can resolve
+  // pricing when there is no SDK method chain (raw fetch).
+  const url = context.apiCalls[0]?.url ?? undefined;
   return {
     filePath,
     description: ensureMaxSentences(getDescription(context), 2),
     providers: context.providers,
     topRisks: getTopRisks(context),
-    estimatedMonthlyCost: provider ? (estimateLocalMonthlyCost(provider, callsPerDay, methodSig) ?? null) : null,
+    estimatedMonthlyCost: provider ? (estimateLocalMonthlyCost(provider, callsPerDay, methodSig, url) ?? null) : null,
     whyItMatters: ensureMaxSentences(getWhyItMatters(context), 1),
   };
 }

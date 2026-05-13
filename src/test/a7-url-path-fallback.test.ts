@@ -48,4 +48,18 @@ async function run(name: string, fn: () => void | Promise<void>): Promise<void> 
     // The default would be cheaper. Validate we got the specific one by checking the description or cost.
     assert.equal(fp!.costModel, "per_request");
   });
+
+  await run("integration: estimateLocalMonthlyCost resolves cost from URL-path for raw elevenlabs fetch", async () => {
+    const { estimateLocalMonthlyCost } = await import("../intelligence/cost-utils");
+    const cost = estimateLocalMonthlyCost(
+      "elevenlabs",
+      1000,
+      undefined,
+      "https://api.elevenlabs.io/v1/text-to-speech/voice-abc/stream"
+    );
+    // Pre-A7: cost would fall through to LOCAL_PRICING (undefined for elevenlabs) → null or stub
+    // Post-A7: should resolve to a real per-request cost from the fingerprint
+    assert.ok(cost !== null, `expected a non-null cost from URL-path lookup; got ${cost}`);
+    assert.ok(cost! > 0, `expected positive cost; got ${cost}`);
+  });
 })().catch((err) => { console.error(err); process.exit(1); });
