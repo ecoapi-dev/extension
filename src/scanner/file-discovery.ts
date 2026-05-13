@@ -42,10 +42,14 @@ const DEFAULT_IGNORE_PATTERNS = [
   "**/*.min.js",       // minified files
   "**/*.min.css",      // minified files
 
-  // (A6 / #78) Filename-based pricing/config exclusions were removed in favor
-  // of distinguishing real call_expression sites from object-literal data.
-  // See src/scanner/core-scanner.ts and src/ast/ast-scanner.ts for the logic
-  // that prevents false positives in `{ "method.chain": { ... } }` literals.
+  // (A6 / #78) These files were previously excluded to mask false positives
+  // where the multi-line regex fallback in core-scanner.ts attributed real
+  // call_expression matches to the start of a 6-line window — e.g. an
+  // `import OpenAI from "openai"` line slurping a real
+  // chat.completions.create call from a later line and reporting it at
+  // line 1. The actual fix is in core-scanner.ts (search for `astOverlap`).
+  // These exclusions are no longer needed and were masking real calls in
+  // any file matching these names. Removed for #78.
 ];
 
 export const HARD_EXCLUDED_SEGMENTS = new Set([
