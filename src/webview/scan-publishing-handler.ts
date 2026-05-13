@@ -527,6 +527,12 @@ function mergeRemoteAndLocalEndpoints(
       synthetic.crossFileOrigins = synthetic.crossFileOrigins ?? [];
       synthetic.crossFileOrigins.push(call.crossFileOrigin);
     }
+    synthetic.monthlyCost = estimateLocalMonthlyCost(
+      synthetic.provider,
+      synthetic.callsPerDay,
+      synthetic.methodSignature,
+      synthetic.url,
+    ) ?? 0;
   }
 
   return [...merged, ...syntheticByMethodUrl.values()]

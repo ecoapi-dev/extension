@@ -181,8 +181,12 @@ export function lookupByUrlPath(provider: string, url: string): MethodFingerprin
       fallback = entry;
       continue;
     }
-    if (entry.urlPathKey && pathAndQuery.includes(entry.urlPathKey)) {
-      return entry;
+    if (entry.urlPathKey) {
+      const escaped = entry.urlPathKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const boundary = new RegExp(`(^|/)${escaped}(/|$|\\?)`);
+      if (boundary.test(pathAndQuery)) {
+        return entry;
+      }
     }
   }
   return fallback;

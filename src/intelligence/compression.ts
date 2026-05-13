@@ -361,10 +361,15 @@ function buildFileSummary(filePath: string, snapshot: RepoIntelligenceSnapshot):
   const context = buildFileContext(snapshot, filePath);
   const provider = context.providers[0] ?? null;
   const callsPerDay = estimateCallsPerDay(context.apiCalls);
-  const methodSig = context.apiCalls[0]?.method ?? undefined;
-  // A7: pass the first matching call's URL so URL-path lookup can resolve
-  // pricing when there is no SDK method chain (raw fetch).
-  const url = context.apiCalls[0]?.url ?? undefined;
+  // A7: In mixed-provider clusters, pair the chosen provider with one of its
+  // own calls so method/url align with the provider used for pricing.
+  const representativeCall = provider
+    ? (context.apiCalls.find((call) => normalizeProviderId(call.provider) === provider) ?? context.apiCalls[0])
+    : context.apiCalls[0];
+  const methodSig = representativeCall?.method ?? undefined;
+  // A7: pass the matching call's URL so URL-path lookup can resolve pricing
+  // when there is no SDK method chain (raw fetch).
+  const url = representativeCall?.url ?? undefined;
   return {
     filePath,
     description: ensureMaxSentences(getDescription(context), 2),
