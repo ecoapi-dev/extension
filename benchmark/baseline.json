@@ -3,5 +3,42 @@
   "detectionRecall": 0.4852941176470588,
   "providerAttributionAccuracy": 0.8214285714285714,
   "findingPrecision": 0.0625,
-  "findingRecall": 0.3333333333333333
+  "findingRecall": 0.3333333333333333,
+  "findingMetricsByType": {
+    "batch": {
+      "truePositives": 0,
+      "falsePositives": 7,
+      "falseNegatives": 1,
+      "precision": 0,
+      "recall": 0
+    },
+    "rate_limit": {
+      "truePositives": 0,
+      "falsePositives": 1,
+      "falseNegatives": 0,
+      "precision": 0,
+      "recall": 1
+    },
+    "n_plus_one": {
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    "cache": {
+      "truePositives": 0,
+      "falsePositives": 7,
+      "falseNegatives": 0,
+      "precision": 0,
+      "recall": 1
+    },
+    "unbatched_parallel": {
+      "truePositives": 0,
+      "falsePositives": 0,
+      "falseNegatives": 1,
+      "precision": 1,
+      "recall": 0
+    }
+  }
 }

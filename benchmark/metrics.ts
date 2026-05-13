@@ -1,4 +1,4 @@
-import type { ExpectedJson } from "./schema";
+import type { ExpectedJson, ExpectedFinding } from "./schema";
 
 const LINE_TOLERANCE = 2;
 
@@ -15,12 +15,29 @@ export interface DetectedFinding {
   type: string;
 }
 
+/** Raw TP/FP/FN counts for a single finding type, per fixture. */
+export interface FindingTypeCounts {
+  truePositives: number;
+  falsePositives: number;
+  falseNegatives: number;
+}
+
+/** Aggregated per-type counts plus derived precision/recall. */
+export interface FindingTypeMetrics extends FindingTypeCounts {
+  /** TP / (TP+FP); 1 when denominator is 0 (safeRatio convention). */
+  precision: number;
+  /** TP / (TP+FN); 1 when denominator is 0 (safeRatio convention). */
+  recall: number;
+}
+
 export interface MetricsReport {
   detectionPrecision: number;
   detectionRecall: number;
   providerAttributionAccuracy: number;
   findingPrecision: number;
   findingRecall: number;
+  /** Per-finding-type precision/recall aggregated across all fixtures. */
+  findingMetricsByType: Record<string, FindingTypeMetrics>;
   /** Per-fixture breakdown, useful for diagnosing where a regression landed. */
   perFixture: PerFixtureMetrics[];
 }
@@ -42,6 +59,11 @@ export interface PerFixtureMetrics {
   providerAttributionTotal: number;
   /** Of those, how many had the detected provider matching the expected provider. */
   providerAttributionCorrect: number;
+  /**
+   * Raw TP/FP/FN counts per finding type for this fixture. Empty record when neither
+   * `expected.findings` nor `detectedFindings` contain any entries.
+   */
+  findingCountsByType: Record<string, FindingTypeCounts>;
 }
 
 /**
@@ -85,6 +107,28 @@ export function computeMetrics(
     (e, d) => e.file === d.file && e.type === d.type && Math.abs(e.line - d.line) <= LINE_TOLERANCE,
   );
 
+  // Per-type counts: union the types observed in expected + detected, then re-run matchPairs
+  // over each type-scoped subset. The existing matcher already requires e.type === d.type, so
+  // segregating by type and rerunning gives the right TP/FP/FN counts per type.
+  const findingCountsByType: Record<string, FindingTypeCounts> = {};
+  const typeSet = new Set<string>();
+  for (const e of expected.findings) typeSet.add(e.type);
+  for (const d of detectedFindings) typeSet.add(d.type);
+  for (const type of typeSet) {
+    const expectedForType: ExpectedFinding[] = expected.findings.filter(e => e.type === type);
+    const detectedForType: DetectedFinding[] = detectedFindings.filter(d => d.type === type);
+    const result = matchPairs(
+      expectedForType,
+      detectedForType,
+      (e, d) => e.file === d.file && e.type === d.type && Math.abs(e.line - d.line) <= LINE_TOLERANCE,
+    );
+    findingCountsByType[type] = {
+      truePositives: result.truePositives,
+      falsePositives: result.falsePositives,
+      falseNegatives: result.falseNegatives,
+    };
+  }
+
   return {
     fixtureSlug: expected.fixtureSlug,
     detectionPrecision: safeRatio(endpointMatch.truePositives, endpointMatch.truePositives + endpointMatch.falsePositives),
@@ -100,6 +144,7 @@ export function computeMetrics(
     falseNegativeFindings: findingMatch.falseNegatives,
     providerAttributionTotal: attributionTotal,
     providerAttributionCorrect: attributionCorrect,
+    findingCountsByType,
   };
 }
 
@@ -119,12 +164,35 @@ export function aggregate(perFixture: PerFixtureMetrics[]): MetricsReport {
     { tpE: 0, fpE: 0, fnE: 0, tpF: 0, fpF: 0, fnF: 0, attCorrect: 0, attTotal: 0 },
   );
 
+  // Sum TP/FP/FN per finding type across all fixtures, then derive precision/recall.
+  const typeTotals: Record<string, FindingTypeCounts> = {};
+  for (const m of perFixture) {
+    for (const [type, counts] of Object.entries(m.findingCountsByType)) {
+      const acc = typeTotals[type] ?? { truePositives: 0, falsePositives: 0, falseNegatives: 0 };
+      acc.truePositives += counts.truePositives;
+      acc.falsePositives += counts.falsePositives;
+      acc.falseNegatives += counts.falseNegatives;
+      typeTotals[type] = acc;
+    }
+  }
+  const findingMetricsByType: Record<string, FindingTypeMetrics> = {};
+  for (const [type, counts] of Object.entries(typeTotals)) {
+    findingMetricsByType[type] = {
+      truePositives: counts.truePositives,
+      falsePositives: counts.falsePositives,
+      falseNegatives: counts.falseNegatives,
+      precision: safeRatio(counts.truePositives, counts.truePositives + counts.falsePositives),
+      recall: safeRatio(counts.truePositives, counts.truePositives + counts.falseNegatives),
+    };
+  }
+
   return {
     detectionPrecision: safeRatio(sum.tpE, sum.tpE + sum.fpE),
     detectionRecall: safeRatio(sum.tpE, sum.tpE + sum.fnE),
     providerAttributionAccuracy: sum.attTotal === 0 ? 1 : sum.attCorrect / sum.attTotal,
     findingPrecision: safeRatio(sum.tpF, sum.tpF + sum.fpF),
     findingRecall: safeRatio(sum.tpF, sum.tpF + sum.fnF),
+    findingMetricsByType,
     perFixture,
   };
 }

@@ -38,15 +38,25 @@ Each detector has a measured false-positive rate against the benchmark corpus (D
 - [ ] FPR is re-measured on every benchmark CI run; regressions fail the build.
 - [ ] False positives that remain are by-design (documented exceptions, e.g., "we choose to flag this conservatively because the cost of missing it is high").
 
-### Calibration table (to be filled in)
+### Calibration table (measured 2026-05-13 against corpus v1 — 7 fixtures, 3 expected findings)
 
-| Detector | TP | FP | FPR | Severity | Notes |
-|---|---|---|---|---|---|
-| `n_plus_one` | ? | ? | ? | high | |
-| `unbounded_loop` | ? | ? | ? | medium | |
-| `polling_no_backoff` | ? | ? | ? | medium | |
-| `missing_cache_guard` | ? | ? | ? | medium | |
-| `unbatched_parallel` | ? | ? | ? | low | |
+| Detector (scanner `type`) | TP | FP | FN | FPR | Precision | Severity (current) | Notes |
+|---|---|---|---|---|---|---|---|
+| `n_plus_one`           | 1 | 0 | 0 | 0%   | 100% | high   | Only detector with a corpus TP. Sample size = 1. |
+| `cache`                | 0 | 7 | 0 | 100% | 0%   | medium | All 7 emissions are FPs against this corpus. No expected `cache` findings yet. |
+| `batch`                | 0 | 7 | 1 | 100% | 0%   | medium | All 7 emissions are FPs; the one expected `batch` finding (flask-mixed-providers) is missed. |
+| `rate_limit`           | 0 | 1 | 0 | 100% | 0%   | low    | One FP. No expected entries. |
+| `concurrency_control`  | — | — | — | —    | —    | low    | Scanner emits nothing on the corpus; not in the table. See "Type-name mismatch" below. |
+
+The corpus labels one fan-out finding as `unbatched_parallel`; the scanner emits `concurrency_control` for the same pattern. The matcher compares type strings exactly, so the expected `unbatched_parallel` shows up as a recall miss (FN = 1) and the scanner's `concurrency_control` (if it were ever emitted on this corpus) would show up as a separate row of FPs. As of 2026-05-13 the scanner emits zero `concurrency_control` findings on the corpus, so only the FN side appears. The label gap is tracked as a corpus follow-up — either rename the expected type to `concurrency_control` or have the scanner emit `unbatched_parallel` for this specific pattern.
+
+Acceptance criterion "no detector with FPR > 30%" currently fails for `cache`, `batch`, and `rate_limit`. Sample sizes are small (corpus v1 has 3 expected findings total), so the FPR numbers are diagnostic, not statistically robust. Treat them as ordering signal for the follow-up PRs: tighten `cache` and `batch` first (each 7 FPs), then `rate_limit`. Wait until the corpus grows past N ≥ 10 expected findings per type before defending an "FPR < 30%" target as final.
+
+### Measurement plumbing
+
+These numbers come from the D1 benchmark gate. `benchmark/metrics.ts` computes per-type TP/FP/FN per fixture; `aggregate()` rolls them up; `benchmark/runner.ts` writes `findingMetricsByType` to `benchmark/baseline.json` on `--update-baseline`. CI fails on any per-type precision drop > 1pp where the sample size (TP+FP) is at least 3 on both the current run and the baseline — types with fewer emissions are skipped to avoid single-count noise.
+
+The follow-up PRs (PR-2+ in the C1 plan, `docs/superpowers/plans/2026-05-13-c1-waste-detector-calibration.md`) tighten one detector at a time using the per-type gate to prove each change is a real improvement.
 
 ### Files
 - `src/scanner/local-waste-detector.ts`

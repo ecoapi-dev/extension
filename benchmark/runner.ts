@@ -203,6 +203,7 @@ async function main(): Promise<void> {
       providerAttributionAccuracy: report.providerAttributionAccuracy,
       findingPrecision: report.findingPrecision,
       findingRecall: report.findingRecall,
+      findingMetricsByType: report.findingMetricsByType,
     }, null, 2) + "\n");
     console.log(formatConsoleReport(report, null));
     console.log(`\nBaseline updated: ${args.baselinePath}`);
@@ -212,7 +213,11 @@ async function main(): Promise<void> {
   let baseline: MetricsReport | null = null;
   if (fs.existsSync(args.baselinePath)) {
     const raw = JSON.parse(fs.readFileSync(args.baselinePath, "utf8"));
-    baseline = { ...raw, perFixture: [] };
+    baseline = {
+      ...raw,
+      findingMetricsByType: raw.findingMetricsByType ?? {},
+      perFixture: [],
+    };
   }
   console.log(formatConsoleReport(report, baseline));
 
@@ -243,10 +248,30 @@ function computeDrops(current: MetricsReport, baseline: MetricsReport, threshold
     "findingPrecision",
     "findingRecall",
   ];
-  const drops = [];
+  const drops: Array<{ metric: string; current: number; baseline: number; deltaPp: number }> = [];
   for (const m of metrics) {
     const deltaPp = (current[m] - baseline[m]) * 100;
     if (deltaPp < -thresholdPp) drops.push({ metric: m, current: current[m], baseline: baseline[m], deltaPp });
+  }
+  // Per-type precision drops. Sample-size gate: only fire when both baseline and current
+  // have TP+FP >= 3 for the type — types with too few emitted findings are noisy.
+  const currentByType = current.findingMetricsByType ?? {};
+  const baselineByType = baseline.findingMetricsByType ?? {};
+  for (const [type, cur] of Object.entries(currentByType)) {
+    const base = baselineByType[type];
+    if (!base) continue;
+    const curSample = cur.truePositives + cur.falsePositives;
+    const baseSample = base.truePositives + base.falsePositives;
+    if (curSample < 3 || baseSample < 3) continue;
+    const deltaPp = (cur.precision - base.precision) * 100;
+    if (deltaPp < -thresholdPp) {
+      drops.push({
+        metric: `findings[${type}].precision`,
+        current: cur.precision,
+        baseline: base.precision,
+        deltaPp,
+      });
+    }
   }
   return drops;
 }
