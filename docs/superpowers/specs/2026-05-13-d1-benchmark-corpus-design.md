@@ -7,60 +7,107 @@
 
 ## Goal
 
-Build a labeled benchmark corpus of real OSS repo subsets, vendored into `benchmark/fixtures/`, hand-annotated with expected endpoints and findings. A `runner.ts` runs the live scanner against each fixture, computes precision/recall/attribution metrics, and compares against a committed `baseline.json`. A GitHub Actions workflow runs the same on every PR and fails the build if precision or recall drops > 1pp on any tracked metric.
+Build a labeled benchmark corpus of real OSS repo subsets, **vendored into a separate `recost-dev/extension_benchmark` repo**, hand-annotated with expected endpoints and findings. A `runner.ts` in the extension repo runs the live scanner against each fixture, computes precision/recall/attribution metrics, and compares against a committed `baseline.json`. A GitHub Actions workflow runs the same on every PR and fails the build if precision or recall drops > 1pp on any tracked metric.
 
 This is the foundation for every other accuracy-track issue. A1, A2, A3, A5, A6, A7, C1, C3 all reference "benchmark shows no precision/recall regression" as acceptance criteria. Without D1, those bars are unenforceable.
+
+## Repo split
+
+D1's code and data live in two repos:
+
+- **`extension`** (this repo) — runner, metrics, schema, baseline, smoke fixture, CI workflow. Gate-relevant logic lives with the gated code.
+- **`recost-dev/extension_benchmark`** (separate repo, already created and empty) — the real fixtures (vendored OSS subsets + `expected.json` + `FIXTURE.md`).
+
+The CI workflow in `extension` clones `extension_benchmark` at a pinned SHA before running the benchmark. The pinned SHA is the single source of truth for "which fixtures are we measured against right now."
+
+**Why split:**
+- Keeps `extension` slim — no hundreds of vendored OSS files bloating clones, IDE indexing, or developer scans
+- Vendored OSS code is excluded from the VSIX automatically (it would be anyway via `.vscodeignore`'s allowlist, but now it's not even in the repo)
+- Fixtures can be added/updated/refreshed independently of extension PRs
+- Pinning by SHA in `extension` keeps CI deterministic — same SHA = same fixtures = same baseline expectations
+
+**Editing model (post-ship):**
+
+| Change | Edit which repo |
+|---|---|
+| Add / fix / refresh a fixture | `extension_benchmark` |
+| Use newer fixtures for the gate | `extension` — bump `.benchmark-fixtures-sha` |
+| Improve scanner; baseline legitimately moves | `extension` — code change + `baseline.json` update in same PR |
+| Change gate threshold or runner logic | `extension` |
 
 ## Non-goals
 
 - **Not** a replacement for unit tests. Unit tests check that a function does what it says; the benchmark checks the system end-to-end against real-world code.
 - **Not** exhaustive. 5 repos for the v1 ship; up to 10 in a follow-up. The corpus is a representative sample, not coverage.
-- **Not** a runtime telemetry tool. That is what `automated-parser` is for. D1 is a deterministic CI gate over pinned, vendored fixtures.
+- **Not** a runtime telemetry tool. That is what `automated-parser` is for. D1 is a deterministic CI gate over pinned, vendored fixtures in a separate repo.
 - **Not** sharing engine code with `automated-parser`. D1's runner invokes the **live** scanner via the extension's own `dist/cli/scan.js`, which is built from the current PR's source. `automated-parser`'s engine is a frozen snapshot; D1 tests the current PR.
+- **Not** using git submodules. Pinning by SHA in a workflow step is simpler, has no local-dev ceremony, and doesn't infect contributors who don't run the benchmark.
 
 ## Architecture
 
 ```
-extension/
-  benchmark/                          # NEW
-    fixtures/
-      <fixture-slug>/
-        src/...                       # vendored 10-50 files from upstream
-        expected.json                 # ground-truth annotations
-        FIXTURE.md                    # provenance + scope
-    runner.ts                         # orchestrates scan + compare per fixture
-    metrics.ts                        # pure precision/recall math
-    schema.ts                         # ExpectedJson types + validator
-    report.ts                         # JSON + console output formatting
-    baseline.json                     # committed metric baseline
-    README.md                         # how to add a fixture, how to update baseline
+extension/                              # this repo
+  benchmark/                            # NEW
+    runner.ts                           # orchestrates scan + compare per fixture
+    metrics.ts                          # pure precision/recall math
+    schema.ts                           # ExpectedJson types + validator
+    report.ts                           # JSON + console output formatting
+    baseline.json                       # committed metric baseline (LIVES HERE, not in fixtures repo)
+    _smoke/                             # tiny in-repo fixture for runner unit tests
+      src/example.ts                    # ~2 hand-crafted endpoints
+      expected.json
+    README.md                           # docs: where real fixtures live, how to add one
   .github/workflows/
-    benchmark.yml                     # NEW — PR gate
+    benchmark.yml                       # NEW — clones fixtures repo, runs benchmark
+  .benchmark-fixtures-sha               # NEW — pinned SHA of extension_benchmark
   docs/accuracy/
-    measurement.md                    # UPDATE — fill in initial baseline table
-  package.json                        # ADD "benchmark" script
+    measurement.md                      # UPDATE — fill in initial baseline table
+  package.json                          # ADD "benchmark" + "benchmark:smoke" scripts
+
+extension_benchmark/                    # separate repo (recost-dev/extension_benchmark)
+  langchain-openai/
+    src/...                             # vendored 10-50 files from upstream
+    expected.json                       # ground-truth annotations
+    FIXTURE.md                          # provenance + scope
+  openai-cookbook/
+    src/...
+    expected.json
+    FIXTURE.md
+  stripe-sample/...
+  bedrock-raw-fetch/...
+  flask-mixed-providers/...
+  README.md                             # how to add a fixture
 ```
 
-**Data flow per PR:**
+**Data flow per PR (extension repo):**
 
-1. CI installs deps and runs `npm run build:ext` (scanner needs compiled output).
-2. CI runs `npm run benchmark`.
-3. `runner.ts` enumerates `benchmark/fixtures/*/`, scans each by spawning `node dist/cli/scan.js <fixture> --format json` (the live scanner built from current PR source), loads `expected.json`, computes per-fixture and aggregate metrics.
-4. Runner compares aggregate to `benchmark/baseline.json`. Exits non-zero if any tracked metric drops > 1pp.
-5. Runner writes a markdown report to `$GITHUB_STEP_SUMMARY` showing per-metric current vs baseline vs delta, and per-fixture details for any regression.
+1. CI checks out `extension` at the PR head.
+2. CI runs `npm ci` and `npm run build:ext`.
+3. CI reads `.benchmark-fixtures-sha`, clones `extension_benchmark` at that SHA into `./benchmark-fixtures/` (shallow, no history).
+4. CI runs `npm run benchmark -- --fixtures ./benchmark-fixtures`.
+5. `runner.ts` enumerates `<fixtures-dir>/*/` (excluding `_*` and dotfiles), scans each by spawning `node dist/cli/scan.js <fixture>/src --format json` (the live scanner built from current PR source), loads `expected.json`, computes per-fixture and aggregate metrics.
+6. Runner compares aggregate to `benchmark/baseline.json`. Exits non-zero if any tracked metric drops > 1pp.
+7. Runner writes a markdown report to `$GITHUB_STEP_SUMMARY` showing per-metric current vs baseline vs delta, and per-fixture details for any regression.
+
+**Local dev:**
+
+- `npm run benchmark:smoke` — runs only against `benchmark/_smoke/`. No network. Used while developing the runner or for fast iteration.
+- `npm run benchmark` — defaults to `--fixtures ../extension_benchmark` (sibling-dir convention). Errors with a clear message if the path doesn't exist, telling the user how to clone or override with `--fixtures <path>`.
 
 **Key boundary:** `runner.ts` consumes scanner output through the same JSON shape `src/cli/scan.ts` already emits: `{ endpoints, suggestions, summary, scannedFileCount, target }`. It does not import scanner modules and does not poke at internals. When the scanner changes, the runner does not — as long as the JSON contract holds.
 
 ## Fixture strategy
 
-**Vendor, do not live-clone.** Each fixture is a checked-in subset (10-50 files) of a real OSS repo at a pinned commit. Vendoring buys:
+**Vendor (in `extension_benchmark`), do not live-clone from upstream.** Each fixture is a committed subset (10-50 files) of a real OSS repo at a pinned upstream commit. Vendoring buys:
 
-- Reproducible CI (no network, no GitHub rate limits, no upstream changes)
+- Reproducible CI (no network to upstream GitHub, no rate limits, no upstream changes mid-flight)
 - Stable line numbers for hand-annotated `expected.json`
-- Offline development
+- Offline development (once cloned, fully self-contained)
 - Trivially diff-able regressions in PR review
 
 The scope of each fixture: just enough code to exercise the surface that fixture represents (a few SDK call sites, the helpers that wrap them, the entry points that call those helpers). Trim out unrelated files (tests, docs, build configs) unless they're load-bearing for the scan.
+
+Note: CI **does** clone `extension_benchmark` from GitHub at run time, but at a pinned SHA — so determinism is preserved. The "no upstream cloning" rule applies to the original OSS sources (LangChain, Stripe samples, etc.) which we vendor once into `extension_benchmark`.
 
 **Provenance.** Each fixture has a `FIXTURE.md` recording:
 
@@ -161,11 +208,12 @@ Each is reported globally (across all fixtures) and per-fixture (for diagnosis).
 ```ts
 // benchmark/runner.ts
 async function runBenchmark(opts: {
-  fixturesDir: string;          // default: "benchmark/fixtures"
+  fixturesDir: string;          // CLI flag --fixtures; default: "../extension_benchmark" (sibling dir)
   baselinePath: string;         // default: "benchmark/baseline.json"
   thresholdPp: number;          // default: 1.0
   updateBaseline: boolean;      // when true, overwrite baseline.json instead of gating
   reportPath?: string;          // optional — write JSON report
+  smokeOnly: boolean;           // when true, ignore fixturesDir and use benchmark/_smoke only
 }): Promise<{ exitCode: 0 | 1; report: MetricsReport }>;
 ```
 
@@ -188,68 +236,98 @@ Fixtures run sequentially (not parallel) in CI — keeps logs deterministic and 
 
 - Trigger: `pull_request: branches: [main]` and `push: branches: [main]`.
 - Steps:
-  1. `actions/checkout@v4`
+  1. `actions/checkout@v4` (extension repo at PR head)
   2. `actions/setup-node@v4` with Node 20 + npm cache
   3. `npm ci`
   4. `npm run build:ext`
-  5. `npm run benchmark` — exits non-zero on regression
-  6. On failure, the report markdown is written to `$GITHUB_STEP_SUMMARY` so the PR comments show a diff table
+  5. Read SHA: `FIXTURES_SHA=$(cat .benchmark-fixtures-sha)`
+  6. Clone fixtures: `git clone --depth 1 https://github.com/recost-dev/extension_benchmark.git benchmark-fixtures && cd benchmark-fixtures && git fetch --depth 1 origin $FIXTURES_SHA && git checkout $FIXTURES_SHA && cd ..`
+  7. `npm run benchmark -- --fixtures ./benchmark-fixtures` — exits non-zero on regression
+  8. On failure, the report markdown is written to `$GITHUB_STEP_SUMMARY` so the PR shows a diff table in checks
 - Concurrency: cancel-in-progress on the same PR head — prevents stacking runs as commits push.
+- The fixtures clone uses the default `GITHUB_TOKEN` (sufficient for public repos; if `extension_benchmark` is later made private, switch to a PAT secret).
 
 This is a separate workflow from `test.yml`. The benchmark is heavier per fixture than unit tests, and isolating it makes the gate failure obvious in PR status checks.
 
 ## Baseline bootstrap
 
-First-ship bootstrap, in order:
+Two-repo bootstrap. Order matters:
 
-1. Land the runner, schema, metrics, and the 5 fixtures' code + `expected.json` (no `baseline.json` yet).
-2. Run `npm run benchmark -- --update-baseline` locally to produce the initial numbers.
-3. Commit `baseline.json` and update the **Initial baseline** table in `docs/accuracy/measurement.md` in the same PR.
-4. Land `benchmark.yml` last — its first run on `main` after merge establishes the green baseline.
+1. **In `extension_benchmark`:** land all 5 fixtures (vendored sources + `expected.json` + `FIXTURE.md`). Tag the head as `v1` for reference; capture the merge commit's SHA.
+2. **In `extension`:** land the runner, schema, metrics, smoke fixture, and `.benchmark-fixtures-sha` pointing at the SHA from step 1. No `baseline.json` yet.
+3. Locally in `extension`: clone `extension_benchmark` at that SHA into `../extension_benchmark`, run `npm run benchmark -- --update-baseline` to produce initial numbers.
+4. Commit `baseline.json` and update the **Initial baseline** table in `docs/accuracy/measurement.md` in the same PR (or as a fast follow-up to step 2).
+5. Land `benchmark.yml` last. Its first run on `main` after merge establishes the green baseline.
 
 Rationale: if `benchmark.yml` lands before `baseline.json`, the workflow fails on its own introducing PR (no baseline → can't compare). Land the gate after the baseline is in.
 
 ## Subagent-driven parallelism
 
-The slow part of D1 is fixture annotation. Each fixture is independent — different repo, different files, different ground truth. This is fan-out work.
+The slow part of D1 is fixture annotation. Each fixture is independent — different repo, different files, different ground truth. This is fan-out work. With the repo split, the parallelism shape splits cleanly across the two repos.
 
-**V1 implementation parallelism (5 streams, can run concurrently):**
+**Phase 1 — Schema-first (in `extension`, single agent, must finish first):**
 
-- **Stream A (1 agent):** Build `benchmark/schema.ts`, `metrics.ts`, `runner.ts`, `report.ts` against a stub fixture. Stream A produces a complete runner before any real fixture lands.
-- **Streams B1-B5 (5 agents in parallel, one per fixture):**
-  - Each agent: pick the upstream commit, vendor the chosen subset into `benchmark/fixtures/<slug>/`, write `FIXTURE.md`, hand-annotate `expected.json`, run the live scanner locally against the fixture, sanity-check that the scanner output is broadly plausible (not validating against expected — just smoke).
-  - Each fixture lands as a separate sub-branch / sub-PR off the D1 integration branch, so review is per-fixture and a stuck fixture doesn't block the others.
+- One agent lands `benchmark/schema.ts` (the `ExpectedJson` v1 schema). This is the contract the fixture-annotation agents will adhere to.
+- Same agent lands `benchmark/_smoke/` (a tiny hand-crafted fixture with ~2 endpoints + 1 finding) to validate the schema.
+- This phase blocks Phase 2A.
 
-**Integration phase (sequential, after streams converge):**
+**Phase 2A — Runner in `extension` (single agent, parallel with Phase 2B):**
 
-- One agent: assemble all 5 fixtures into the integration branch, run `--update-baseline`, commit `baseline.json`, update `docs/accuracy/measurement.md`, add `benchmark.yml`, open final PR.
+- Builds `metrics.ts`, `runner.ts`, `report.ts` against the smoke fixture.
+- Adds `npm run benchmark` / `npm run benchmark:smoke` scripts.
+- Lands as a self-contained PR in `extension`.
+
+**Phase 2B — Fixtures in `extension_benchmark` (5 agents in parallel, one per fixture):**
+
+- Each agent works in `extension_benchmark` repo (with `isolation: "worktree"`).
+- Each agent: pick the upstream commit, vendor the chosen subset into `<fixture-slug>/`, write `FIXTURE.md`, hand-annotate `expected.json` against the v1 schema.
+- Each fixture lands as a separate PR to `extension_benchmark`. Review is per-fixture; one stuck fixture doesn't block the others.
+
+**Phase 3 — Integration (in `extension`, single agent, sequential):**
+
+- After Phase 2A and all 5 of Phase 2B's PRs are merged:
+- Bump `.benchmark-fixtures-sha` to point at `extension_benchmark` HEAD
+- Clone fixtures locally, run `--update-baseline`, commit `baseline.json`
+- Update `docs/accuracy/measurement.md` initial baseline table with real numbers
+- Add `benchmark.yml` workflow
+- Open final integrating PR in `extension`
 
 **Why this works:**
 
-- Streams B1-B5 only share the **schema** with each other and the runner — and the schema lands in Stream A before B1-B5 start labeling. They don't touch each other's directories.
-- Stream A can run against a tiny `_smoke/` fixture (hand-crafted toy with 2 endpoints, 1 finding) to develop the runner without waiting on real fixtures.
-- The final integration is the only sequential bottleneck. It's mechanical.
+- Phase 2A and 2B share only `schema.ts` — and schema lands in Phase 1 before either starts.
+- 2A and 2B are in different repos; they cannot stomp on each other.
+- The 5 fixture agents in 2B are in different directories within the same repo; with worktree isolation they cannot stomp on each other.
+- Phase 3 is purely mechanical — collect + bump + measure + add workflow.
 
 **Agent dispatch shape (for the implementation plan):**
 
-- 1 message launches Stream A (general-purpose agent) AND B1-B5 (5 general-purpose agents, one per fixture) **in parallel** in a single tool call block.
-- Each agent gets:
-  - A pointer to this spec
-  - The contract it must produce (file paths, schema)
-  - A worktree isolation flag (`isolation: "worktree"`) so they don't stomp on each other's working directory
-- An integration agent runs **after** all 6 streams complete — it consumes their worktrees, merges, and produces the final PR.
+- Phase 1: 1 sequential message.
+- Phase 2: **1 message launching 6 agents in parallel** — 1 for Phase 2A (extension repo, runner) + 5 for Phase 2B (extension_benchmark, one per fixture). All use `isolation: "worktree"`.
+- Phase 3: 1 sequential message after Phase 2 completes, with the merged-fixture SHA.
+
+Each agent gets:
+- A pointer to this spec
+- The contract it must produce (file paths, schema, acceptance criteria)
+- The repo to work in (`extension` or `extension_benchmark`)
+- Worktree isolation
 
 ## Acceptance criteria
 
-- [ ] `benchmark/` directory exists with ≥5 hand-labeled fixtures
-- [ ] Each fixture has `expected.json` (schemaVersion 1), `FIXTURE.md`, vendored source
-- [ ] `npm run benchmark` runs to completion, produces a metrics report
+In `extension_benchmark`:
+- [ ] ≥5 hand-labeled fixtures, each with vendored source, `expected.json` (schemaVersion 1), `FIXTURE.md`
+- [ ] `README.md` documents how to add a fixture and the license policy
+
+In `extension`:
+- [ ] `benchmark/runner.ts`, `metrics.ts`, `schema.ts`, `report.ts` implemented
+- [ ] `benchmark/_smoke/` exists with a hand-crafted fixture
+- [ ] `.benchmark-fixtures-sha` pinned to `extension_benchmark` HEAD
+- [ ] `npm run benchmark` and `npm run benchmark:smoke` scripts present and working
 - [ ] `benchmark/baseline.json` committed with measured initial values
 - [ ] `docs/accuracy/measurement.md` "Initial baseline" table filled in with real numbers
 - [ ] `.github/workflows/benchmark.yml` runs on every PR and push to main
 - [ ] Workflow fails when precision or recall drops > 1pp vs baseline (verified on a deliberately-regressed test branch)
 - [ ] `metrics.ts` has unit tests for: exact match, ±2 line tolerance, missing detection, false positive, provider mismatch
-- [ ] `benchmark/README.md` documents how to add a fixture and how to update the baseline
+- [ ] `benchmark/README.md` documents how to point at fixtures, update baseline, bump fixtures SHA
 
 ## Risks and mitigations
 
@@ -267,9 +345,11 @@ The slow part of D1 is fixture annotation. Each fixture is independent — diffe
 - Per-fixture gating (only aggregate gates v1).
 - HTML report (markdown step-summary only).
 - Historical metric tracking / graphing.
-- Live-clone mode (out of v1; the recycle from `automated-parser` does this and stays in `automated-parser`).
+- Live-clone from upstream OSS at runtime (out of v1; that pattern stays in `automated-parser`).
+- Git submodules (rejected; pinned SHA is simpler).
 - V2 fixtures 6-10.
 - Cost-impact accuracy (depends on C3, blocked).
+- Making `extension_benchmark` a private repo or restricting access (it's public for now; auth swap is trivial later).
 
 ## Open questions
 
