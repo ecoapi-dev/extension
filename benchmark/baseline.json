@@ -2,12 +2,12 @@
   "detectionPrecision": 0.3626373626373626,
   "detectionRecall": 0.4852941176470588,
   "providerAttributionAccuracy": 0.8214285714285714,
-  "findingPrecision": 0.09090909090909091,
+  "findingPrecision": 0.3333333333333333,
   "findingRecall": 0.3333333333333333,
   "findingMetricsByType": {
     "batch": {
       "truePositives": 0,
-      "falsePositives": 9,
+      "falsePositives": 1,
       "falseNegatives": 1,
       "precision": 0,
       "recall": 0
