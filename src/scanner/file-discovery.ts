@@ -42,22 +42,14 @@ const DEFAULT_IGNORE_PATTERNS = [
   "**/*.min.js",       // minified files
   "**/*.min.css",      // minified files
 
-  // Pricing, cost, and API configuration files — contain provider data as
-  // constants, not runtime API calls. The AST-level fix (distinguishing object
-  // literal values from call expressions) is tracked as a post-beta issue.
-  "**/pricing.ts",
-  "**/pricing.js",
-  "**/pricing.tsx",
-  "**/costs.ts",
-  "**/costs.js",
-  "**/rates.ts",
-  "**/rates.js",
-  "**/api-config.ts",
-  "**/api-config.js",
-  "**/provider-config.ts",
-  "**/provider-config.js",
-  "**/api-pricing.ts",
-  "**/api-pricing.js",
+  // (A6 / #78) These files were previously excluded to mask false positives
+  // where the multi-line regex fallback in core-scanner.ts attributed real
+  // call_expression matches to the start of a 6-line window — e.g. an
+  // `import OpenAI from "openai"` line slurping a real
+  // chat.completions.create call from a later line and reporting it at
+  // line 1. The actual fix is in core-scanner.ts (search for `astOverlap`).
+  // These exclusions are no longer needed and were masking real calls in
+  // any file matching these names. Removed for #78.
 ];
 
 export const HARD_EXCLUDED_SEGMENTS = new Set([
