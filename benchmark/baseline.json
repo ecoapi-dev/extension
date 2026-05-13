@@ -1,7 +1,7 @@
 {
-  "detectionPrecision": 0.30952380952380953,
-  "detectionRecall": 0.4262295081967213,
-  "providerAttributionAccuracy": 0.7959183673469388,
-  "findingPrecision": 0.07142857142857142,
+  "detectionPrecision": 0.3626373626373626,
+  "detectionRecall": 0.4852941176470588,
+  "providerAttributionAccuracy": 0.8214285714285714,
+  "findingPrecision": 0.0625,
   "findingRecall": 0.3333333333333333
 }
