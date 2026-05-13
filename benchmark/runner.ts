@@ -42,6 +42,15 @@ interface ScanResult {
   }>;
 }
 
+function requireValue(argv: string[], i: number, flag: string): string {
+  const v = argv[i];
+  if (v === undefined) {
+    console.error(`Missing value after ${flag}`);
+    process.exit(2);
+  }
+  return v;
+}
+
 function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     fixturesDir: DEFAULT_FIXTURES,
@@ -53,12 +62,17 @@ function parseArgs(argv: string[]): CliArgs {
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--fixtures") args.fixturesDir = path.resolve(argv[++i]);
-    else if (a === "--baseline") args.baselinePath = path.resolve(argv[++i]);
-    else if (a === "--threshold") args.thresholdPp = Number(argv[++i]);
+    if (a === "--fixtures") args.fixturesDir = path.resolve(requireValue(argv, ++i, a));
+    else if (a === "--baseline") args.baselinePath = path.resolve(requireValue(argv, ++i, a));
+    else if (a === "--threshold") {
+      const raw = requireValue(argv, ++i, a);
+      const n = Number(raw);
+      if (!Number.isFinite(n)) { console.error(`Invalid --threshold value: ${raw}`); process.exit(2); }
+      args.thresholdPp = n;
+    }
     else if (a === "--update-baseline") args.updateBaseline = true;
     else if (a === "--smoke") args.smokeOnly = true;
-    else if (a === "--report") args.reportPath = path.resolve(argv[++i]);
+    else if (a === "--report") args.reportPath = path.resolve(requireValue(argv, ++i, a));
     else if (a === "--help" || a === "-h") { printHelp(); process.exit(0); }
     else { console.error(`Unknown arg: ${a}`); process.exit(2); }
   }
