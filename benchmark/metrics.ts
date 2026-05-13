@@ -38,6 +38,10 @@ export interface PerFixtureMetrics {
   truePositiveFindings: number;
   falsePositiveFindings: number;
   falseNegativeFindings: number;
+  /** Number of expected endpoints with a same-file-line detection whose provider was not "unknown". */
+  providerAttributionTotal: number;
+  /** Of those, how many had the detected provider matching the expected provider. */
+  providerAttributionCorrect: number;
 }
 
 /**
@@ -94,6 +98,8 @@ export function computeMetrics(
     truePositiveFindings: findingMatch.truePositives,
     falsePositiveFindings: findingMatch.falsePositives,
     falseNegativeFindings: findingMatch.falseNegatives,
+    providerAttributionTotal: attributionTotal,
+    providerAttributionCorrect: attributionCorrect,
   };
 }
 
@@ -107,8 +113,8 @@ export function aggregate(perFixture: PerFixtureMetrics[]): MetricsReport {
       tpF: acc.tpF + m.truePositiveFindings,
       fpF: acc.fpF + m.falsePositiveFindings,
       fnF: acc.fnF + m.falseNegativeFindings,
-      attCorrect: acc.attCorrect + Math.round(m.providerAttributionAccuracy * (m.truePositiveEndpoints + m.falseNegativeEndpoints)),
-      attTotal: acc.attTotal + (m.truePositiveEndpoints + m.falseNegativeEndpoints),
+      attCorrect: acc.attCorrect + m.providerAttributionCorrect,
+      attTotal: acc.attTotal + m.providerAttributionTotal,
     }),
     { tpE: 0, fpE: 0, fnE: 0, tpF: 0, fpF: 0, fnF: 0, attCorrect: 0, attTotal: 0 },
   );

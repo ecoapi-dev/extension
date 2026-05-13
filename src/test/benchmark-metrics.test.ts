@@ -109,4 +109,30 @@ function expectedFixture(endpoints: ExpectedJson["endpoints"], findings: Expecte
     assert.equal(m.findingPrecision, 1);
     assert.equal(m.findingRecall, 1);
   });
+
+  await run("methodsEquivalent dot-suffix: fixture's bare chain matches scanner's receiver-prefixed chain", () => {
+    const expected = expectedFixture([
+      { file: "a.ts", line: 5, provider: "openai", method: "chat.completions.create", must_detect: true },
+    ]);
+    const detected: DetectedEndpoint[] = [
+      { file: "a.ts", line: 5, provider: "openai", method: "client.chat.completions.create" },
+    ];
+    const m = computeMetrics(expected, detected, []);
+    assert.equal(m.detectionRecall, 1);
+    assert.equal(m.detectionPrecision, 1);
+  });
+
+  await run("methodsEquivalent does NOT match unrelated method chains sharing a trailing suffix", () => {
+    // "create" is not a suffix-match of "client.chat.completions.create" — the boundary check requires "." before the candidate.
+    // But a fixture's "foo.create" should NOT match a scanner's "bar.create" — they share only the leaf, not a dot-bounded segment from the same parent.
+    const expected = expectedFixture([
+      { file: "a.ts", line: 5, provider: "openai", method: "completions.create", must_detect: true },
+    ]);
+    const detected: DetectedEndpoint[] = [
+      { file: "a.ts", line: 5, provider: "openai", method: "embeddings.create" },
+    ];
+    const m = computeMetrics(expected, detected, []);
+    assert.equal(m.detectionRecall, 0);
+    assert.equal(m.detectionPrecision, 0);
+  });
 })().catch((err) => { console.error(err); process.exit(1); });
