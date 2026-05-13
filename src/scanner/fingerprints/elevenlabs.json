@@ -99,6 +99,37 @@
       "costModel": "free",
       "cacheCapable": true,
       "description": "Conversational AI — list agents is free"
+    },
+    {
+      "urlPathKey": "v1/text-to-speech",
+      "httpMethod": "POST",
+      "endpoint": "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+      "costModel": "per_request",
+      "perRequestCostUsd": 0.0003,
+      "description": "Raw-fetch TTS path (A7)"
+    },
+    {
+      "urlPathKey": "v1/speech-to-text",
+      "httpMethod": "POST",
+      "endpoint": "https://api.elevenlabs.io/v1/speech-to-text",
+      "costModel": "per_request",
+      "perRequestCostUsd": 0.00006,
+      "description": "Raw-fetch STT path (A7)"
+    },
+    {
+      "urlPathKey": "v1/voices",
+      "httpMethod": "GET",
+      "endpoint": "https://api.elevenlabs.io/v1/voices",
+      "costModel": "free",
+      "description": "Raw-fetch list voices (A7)"
+    },
+    {
+      "urlPathKey": "_default",
+      "httpMethod": "POST",
+      "endpoint": "https://api.elevenlabs.io/v1",
+      "costModel": "per_request",
+      "perRequestCostUsd": 0.0001,
+      "description": "Unrecognized ElevenLabs path — conservative fallback (A7)"
     }
   ]
 }
