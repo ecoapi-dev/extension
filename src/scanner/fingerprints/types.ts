@@ -9,8 +9,18 @@ export type Language =
   | "rust";
 
 export interface MethodFingerprint {
-  /** SDK method chain pattern, e.g. "chat.completions.create" */
-  pattern: string;
+  /**
+   * SDK method chain pattern, e.g. "chat.completions.create".
+   * Either `pattern` or `urlPathKey` must be set on every entry.
+   */
+  pattern?: string;
+  /**
+   * URL-path substring used by `lookupByUrlPath` when an API call has a known
+   * provider but no SDK method chain (e.g. raw `fetch(...)`). The matcher tries
+   * the longest `urlPathKey` first; the special value `"_default"` is a
+   * provider-wide fallback (A7, issue #79).
+   */
+  urlPathKey?: string;
   /** HTTP verb: GET | POST | PUT | PATCH | DELETE | SUBSCRIBE | RPC */
   httpMethod: string;
   /** Full URL or URL template for the mapped endpoint */

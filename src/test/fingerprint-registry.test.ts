@@ -65,16 +65,17 @@ run("every provider has required top-level fields", () => {
 
 // ── 2. Method field completeness ─────────────────────────────────────────────
 
-run("every method has pattern, httpMethod, endpoint, costModel", () => {
+run("every method has pattern or urlPathKey, plus httpMethod, endpoint, costModel", () => {
   for (const p of ALL_PROVIDERS) {
     for (const m of p.methods) {
-      assert.ok(m.pattern, `${p.provider}: method missing pattern`);
-      assert.ok(m.httpMethod, `${p.provider}/${m.pattern}: missing httpMethod`);
-      assert.ok(m.endpoint, `${p.provider}/${m.pattern}: missing endpoint`);
-      assert.ok(m.costModel, `${p.provider}/${m.pattern}: missing costModel`);
+      const id = m.pattern ?? m.urlPathKey ?? "<unnamed>";
+      assert.ok(m.pattern || m.urlPathKey, `${p.provider}: method missing both pattern and urlPathKey`);
+      assert.ok(m.httpMethod, `${p.provider}/${id}: missing httpMethod`);
+      assert.ok(m.endpoint, `${p.provider}/${id}: missing endpoint`);
+      assert.ok(m.costModel, `${p.provider}/${id}: missing costModel`);
       assert.ok(
         ["per_token", "per_transaction", "per_request", "free"].includes(m.costModel),
-        `${p.provider}/${m.pattern}: invalid costModel "${m.costModel}"`
+        `${p.provider}/${id}: invalid costModel "${m.costModel}"`
       );
     }
   }
@@ -84,9 +85,10 @@ run("every method httpMethod is a known verb", () => {
   const VALID = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "SUBSCRIBE", "RPC"]);
   for (const p of ALL_PROVIDERS) {
     for (const m of p.methods) {
+      const id = m.pattern ?? m.urlPathKey ?? "<unnamed>";
       assert.ok(
         VALID.has(m.httpMethod),
-        `${p.provider}/${m.pattern}: unknown httpMethod "${m.httpMethod}"`
+        `${p.provider}/${id}: unknown httpMethod "${m.httpMethod}"`
       );
     }
   }
@@ -96,10 +98,17 @@ run("every method httpMethod is a known verb", () => {
 
 run("no duplicate method patterns within a provider", () => {
   for (const p of ALL_PROVIDERS) {
-    const seen = new Set<string>();
+    const seenPatterns = new Set<string>();
+    const seenUrlPathKeys = new Set<string>();
     for (const m of p.methods) {
-      assert.ok(!seen.has(m.pattern), `${p.provider}: duplicate pattern "${m.pattern}"`);
-      seen.add(m.pattern);
+      if (m.pattern) {
+        assert.ok(!seenPatterns.has(m.pattern), `${p.provider}: duplicate pattern "${m.pattern}"`);
+        seenPatterns.add(m.pattern);
+      }
+      if (m.urlPathKey) {
+        assert.ok(!seenUrlPathKeys.has(m.urlPathKey), `${p.provider}: duplicate urlPathKey "${m.urlPathKey}"`);
+        seenUrlPathKeys.add(m.urlPathKey);
+      }
     }
   }
 });

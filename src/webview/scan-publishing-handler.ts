@@ -473,7 +473,7 @@ function mergeRemoteAndLocalEndpoints(
           crossFileOrigin: call.crossFileOrigin ?? null,
         }],
         callsPerDay,
-        monthlyCost: estimateLocalMonthlyCost(provider, callsPerDay, call.methodSignature) ?? 0,
+        monthlyCost: estimateLocalMonthlyCost(provider, callsPerDay, call.methodSignature, call.url) ?? 0,
         status:
           call.frequency === "per-request"
             ? "n_plus_one_risk"
@@ -527,6 +527,12 @@ function mergeRemoteAndLocalEndpoints(
       synthetic.crossFileOrigins = synthetic.crossFileOrigins ?? [];
       synthetic.crossFileOrigins.push(call.crossFileOrigin);
     }
+    synthetic.monthlyCost = estimateLocalMonthlyCost(
+      synthetic.provider,
+      synthetic.callsPerDay,
+      synthetic.methodSignature,
+      synthetic.url,
+    ) ?? 0;
   }
 
   return [...merged, ...syntheticByMethodUrl.values()]

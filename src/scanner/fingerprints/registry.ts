@@ -8,6 +8,13 @@ const DEBUG_BUNDLE_LOGS = process.env.RECOST_DEBUG_SCAN === "1";
 /** provider (lowercase) → pattern → MethodFingerprint */
 const methodIndex = new Map<string, Map<string, MethodFingerprint>>();
 
+/**
+ * A7 (issue #79): provider (lowercase) → list of URL-path methods, sorted by
+ * descending urlPathKey length so longest-match wins. The special key
+ * `"_default"` is the provider-wide fallback and is kept at the end.
+ */
+const urlPathIndex = new Map<string, MethodFingerprint[]>();
+
 /** lowercase exact hostname → provider id */
 const exactHostIndex = new Map<string, string>();
 
@@ -17,12 +24,31 @@ const regexHostIndex: Array<{ regex: RegExp; provider: string }> = [];
 for (const fp of ALL_PROVIDERS) {
   const key = fp.provider.toLowerCase();
 
-  // Method index
+  // Method index — SDK-chain entries only (those with `pattern`)
   const methods = new Map<string, MethodFingerprint>();
+  const urlPathEntries: MethodFingerprint[] = [];
   for (const m of fp.methods) {
-    methods.set(m.pattern, m);
+    if (m.pattern) {
+      methods.set(m.pattern, m);
+    }
+    if (m.urlPathKey) {
+      urlPathEntries.push(m);
+    }
   }
   methodIndex.set(key, methods);
+
+  if (urlPathEntries.length > 0) {
+    // Longest urlPathKey first so specific matches win over short prefixes.
+    // `_default` is always the longest-tail fallback.
+    urlPathEntries.sort((a, b) => {
+      const aIsDefault = a.urlPathKey === "_default";
+      const bIsDefault = b.urlPathKey === "_default";
+      if (aIsDefault && !bIsDefault) return 1;
+      if (!aIsDefault && bIsDefault) return -1;
+      return (b.urlPathKey?.length ?? 0) - (a.urlPathKey?.length ?? 0);
+    });
+    urlPathIndex.set(key, urlPathEntries);
+  }
 
   // Host index (exact entries in ALL_PROVIDERS take priority)
   for (const h of fp.hosts) {
@@ -120,6 +146,50 @@ export function lookupHost(hostname: string): string | null {
   }
 
   return null;
+}
+
+/**
+ * Find a fingerprint method by matching the request URL's path against
+ * `urlPathKey` entries. Falls back to the `_default` entry if no specific
+ * match. Returns `null` if the provider is unknown, has no URL-path entries,
+ * or the URL is malformed.
+ *
+ * A7 (issue #79): raw-fetch calls have a provider attributed via host match
+ * (see `lookupHost`) but no SDK method chain. Match by URL path instead so
+ * the cost layer can produce a non-stub estimate.
+ *
+ * Matching is longest-key-first against the request path+query, so
+ * `"v1/text-to-speech"` wins over a hypothetical shorter `"v1/"` prefix.
+ */
+export function lookupByUrlPath(provider: string, url: string): MethodFingerprint | null {
+  if (!provider || !url) return null;
+
+  const entries = urlPathIndex.get(provider.toLowerCase());
+  if (!entries || entries.length === 0) return null;
+
+  let pathAndQuery: string;
+  try {
+    const parsed = new URL(url);
+    pathAndQuery = parsed.pathname + (parsed.search ?? "");
+  } catch {
+    return null;
+  }
+
+  let fallback: MethodFingerprint | null = null;
+  for (const entry of entries) {
+    if (entry.urlPathKey === "_default") {
+      fallback = entry;
+      continue;
+    }
+    if (entry.urlPathKey) {
+      const escaped = entry.urlPathKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const boundary = new RegExp(`(^|/)${escaped}(/|$|\\?)`);
+      if (boundary.test(pathAndQuery)) {
+        return entry;
+      }
+    }
+  }
+  return fallback;
 }
 
 /**

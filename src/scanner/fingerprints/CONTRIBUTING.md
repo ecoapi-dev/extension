@@ -102,7 +102,8 @@ Valid `Language` values: `"javascript"`, `"typescript"`, `"python"`, `"go"`, `"j
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `pattern` | `string` | ✓ | SDK method chain without the variable prefix, e.g. `"chat.completions.create"` |
+| `pattern` | `string` | one of | SDK method chain without the variable prefix, e.g. `"chat.completions.create"`. Use this OR `urlPathKey` |
+| `urlPathKey` | `string` | one of | URL-path segment for raw-`fetch`-only providers, e.g. `"v1/text-to-speech"`. Use this OR `pattern`. See [URL-path fingerprints](#url-path-fingerprints-urlpathkey) below |
 | `httpMethod` | `string` | ✓ | HTTP verb: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `SUBSCRIBE`, or `RPC` |
 | `endpoint` | `string` | ✓ | Full URL of the API endpoint, e.g. `"https://api.sendgrid.com/v3/mail/send"` |
 | `costModel` | `CostModel` | ✓ | One of `"per_token"`, `"per_transaction"`, `"per_request"`, `"free"` |
@@ -115,11 +116,19 @@ Valid `Language` values: `"javascript"`, `"typescript"`, `"python"`, `"go"`, `"j
 | `cacheCapable` | `boolean` | — | `true` if responses can be cached |
 | `description` | `string` | — | One-line human-readable description |
 
+Either `pattern` or `urlPathKey` must be set on every method entry — the registry will reject a file where any method has neither.
+
 **Cost model rules:**
 - `per_token` — must have `inputPricePer1M`
 - `per_transaction` — must have `fixedFee` or `percentageFee` (or both)
 - `per_request` — no pricing fields required (usage-based tiers)
 - `free` — no pricing fields
+
+### URL-path fingerprints (`urlPathKey`)
+
+For providers commonly called via raw `fetch(...)` (with no SDK method chain), add a method entry with `urlPathKey` instead of `pattern`. The matcher walks longest-key first and falls back to a `_default` entry if you add one. Path matching is segment-aware (matches on `/` boundaries), so `"v1/text-to-speech"` matches `/v1/text-to-speech/voice-abc/stream` but NOT `/api/v1`.
+
+See `elevenlabs.json` for a worked example.
 
 ---
 

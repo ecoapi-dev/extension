@@ -1,4 +1,4 @@
-import { lookupMethod } from "../scanner/fingerprints/registry";
+import { lookupMethod, lookupByUrlPath } from "../scanner/fingerprints/registry";
 
 // Best-effort local cost estimation shared by the webview and intelligence
 // layer. When a provider or pricing signal is missing, callers can fall back
@@ -44,32 +44,41 @@ const DEFAULT_PER_CALL_COST = 0.0001;
 export function estimateLocalMonthlyCost(
   provider: string,
   callsPerDay: number,
-  methodSignature?: string
+  methodSignature?: string,
+  /**
+   * A7 (issue #79): URL for the call, used when `methodSignature` is undefined
+   * (e.g. raw `fetch()` with a known provider host but no SDK method chain).
+   */
+  url?: string,
 ): number | null {
   if (!provider || provider === "unknown") return null;
   if (!Number.isFinite(callsPerDay) || callsPerDay < 0) return null;
 
-  if (methodSignature) {
-    const fingerprint = lookupMethod(provider, methodSignature);
-    if (fingerprint) {
-      if (fingerprint.costModel === "free") return 0;
-      if (fingerprint.costModel === "per_token") {
-        const inputTokens = 500;
-        const outputTokens = 200;
-        const inputCost = (inputTokens / 1_000_000) * (fingerprint.inputPricePer1M ?? 0);
-        const outputCost = (outputTokens / 1_000_000) * (fingerprint.outputPricePer1M ?? 0);
-        return Math.round((inputCost + outputCost) * callsPerDay * 30 * 100) / 100;
-      }
-      if (fingerprint.costModel === "per_transaction") {
-        const txValue = 50;
-        const fee = (fingerprint.fixedFee ?? 0) + txValue * (fingerprint.percentageFee ?? 0);
-        return Math.round(fee * callsPerDay * 30 * 100) / 100;
-      }
-      if (fingerprint.costModel === "per_request") {
-        return Math.round((fingerprint.fixedFee ?? fingerprint.perRequestCostUsd ?? DEFAULT_PER_CALL_COST) * callsPerDay * 30 * 100) / 100;
-      }
-      return null;
+  let fingerprint = methodSignature ? lookupMethod(provider, methodSignature) : null;
+
+  // A7: fall back to URL-path lookup when the SDK chain didn't resolve.
+  if (!fingerprint && url) {
+    fingerprint = lookupByUrlPath(provider, url);
+  }
+
+  if (fingerprint) {
+    if (fingerprint.costModel === "free") return 0;
+    if (fingerprint.costModel === "per_token") {
+      const inputTokens = 500;
+      const outputTokens = 200;
+      const inputCost = (inputTokens / 1_000_000) * (fingerprint.inputPricePer1M ?? 0);
+      const outputCost = (outputTokens / 1_000_000) * (fingerprint.outputPricePer1M ?? 0);
+      return Math.round((inputCost + outputCost) * callsPerDay * 30 * 100) / 100;
     }
+    if (fingerprint.costModel === "per_transaction") {
+      const txValue = 50;
+      const fee = (fingerprint.fixedFee ?? 0) + txValue * (fingerprint.percentageFee ?? 0);
+      return Math.round(fee * callsPerDay * 30 * 100) / 100;
+    }
+    if (fingerprint.costModel === "per_request") {
+      return Math.round((fingerprint.fixedFee ?? fingerprint.perRequestCostUsd ?? DEFAULT_PER_CALL_COST) * callsPerDay * 30 * 100) / 100;
+    }
+    return null;
   }
 
   const perCall = LOCAL_PRICING[provider];
