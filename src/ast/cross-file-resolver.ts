@@ -244,24 +244,31 @@ function extractReExports(source: string): ReExport[] {
 // ── Export registry builder ───────────────────────────────────────────────────
 
 /**
- * First pass: build ExportRegistry from all scanned files.
+ * Build ExportRegistry from per-file matches.
  *
  * For each file:
  *  - Find exported function line ranges, assign matches inside each range
  *  - For each class in classRegistry, expose ClassName.methodName → matches
- *  - Re-export stubs are NOT resolved here — they're followed lazily in the
- *    second pass (up to 2 hops).
+ *  - Re-export stubs are NOT resolved here — they're followed lazily by
+ *    `resolveExportedMatches` (with cycle protection).
+ *
+ * `matchesByFile` maps absolute filePath → the current set of matches for that
+ * file (raw matches initially, augmented matches on subsequent fixpoint passes).
  */
-function buildExportRegistry(files: PerFileResult[]): ExportRegistry {
+function buildExportRegistry(
+  files: PerFileResult[],
+  matchesByFile: Map<string, AstCallMatch[]>
+): ExportRegistry {
   const registry: ExportRegistry = new Map();
 
   for (const { filePath, source, result } of files) {
     const exports: Map<string, AstCallMatch[]> = new Map();
+    const fileMatches = matchesByFile.get(filePath) ?? result.matches;
 
     // ── Direct exported functions ──────────────────────────────────────────
     const fnRanges = findExportedFunctions(source);
     for (const range of fnRanges) {
-      const inside = matchesInRange(result.matches, range.startLine, range.endLine);
+      const inside = matchesInRange(fileMatches, range.startLine, range.endLine);
       if (inside.length > 0) {
         exports.set(range.name, inside);
       }
@@ -311,7 +318,13 @@ function cloneWithCallerContext(
   };
 }
 
-// ── Resolve re-export chain (up to 2 hops) ────────────────────────────────────
+// ── Resolve a single name through re-export chains ────────────────────────────
+//
+// Cycle-safe via the `visited` set: each `(fromFile, name)` pair is visited at
+// most once per top-level call, so mutual `export { x } from "./other"` chains
+// terminate. The `depth` parameter caps the re-export chain length WITHIN a
+// single call (3 hops). It is unrelated to the outer wrapper-chain depth — that
+// is controlled by `runCrossFileResolution`'s `maxDepth` option.
 
 function resolveExportedMatches(
   name: string,
@@ -319,9 +332,14 @@ function resolveExportedMatches(
   registry: ExportRegistry,
   sourceByFile: Map<string, string>,
   knownFiles: Set<string>,
-  depth: number
+  depth: number,
+  visited: Set<string> = new Set()
 ): AstCallMatch[] | null {
   if (depth > 2) return null;
+
+  const visitKey = `${fromFile}::${name}`;
+  if (visited.has(visitKey)) return null;
+  visited.add(visitKey);
 
   const fileExports = registry.get(fromFile);
   if (fileExports) {
@@ -338,7 +356,7 @@ function resolveExportedMatches(
     if (re.exportedName !== name) continue;
     const resolved = resolveImportPath(fromFile, re.specifier, knownFiles);
     if (!resolved) continue;
-    const found = resolveExportedMatches(name, resolved, registry, sourceByFile, knownFiles, depth + 1);
+    const found = resolveExportedMatches(name, resolved, registry, sourceByFile, knownFiles, depth + 1, visited);
     if (found) return found;
   }
 
@@ -347,134 +365,237 @@ function resolveExportedMatches(
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+export interface CrossFileResolutionOptions {
+  /** Maximum number of fixpoint iterations (wrapper-chain depth). Default: 3. */
+  maxDepth?: number;
+}
+
+const DEFAULT_MAX_DEPTH = 3;
+
+/** Stable dedupe key for an AstCallMatch within an output file's match list. */
+function matchDedupeKey(m: AstCallMatch): string {
+  return `${m.sourceFile ?? ""}::${m.line}::${m.methodChain}::${m.crossFile ? "x" : "o"}`;
+}
+
+/**
+ * Per-caller invariants that do not change across fixpoint iterations: source
+ * never changes, so neither do its imports, its middleware queue, or per-name
+ * call-site locations. Hoisted out of the iteration loop to avoid re-running
+ * regex passes on every pass.
+ */
+interface CallerContext {
+  caller: PerFileResult;
+  callerPath: string;       // normalized
+  callerRelative: string;
+  imports: ImportedName[];
+  /** localName → list of bare invocation lines in source. */
+  callSiteLinesByName: Map<string, number[]>;
+  /** middlewareName → resolved import entry (or null if not imported relatively). */
+  middlewareByName: Map<string, ImportedName | null>;
+  /** middlewareName → app.use(name) line in source, if found. */
+  middlewareUseLineByName: Map<string, number | null>;
+}
+
 /**
  * Run cross-file resolution over all per-file scan results.
+ *
+ * Iterates the propagation pass until no new matches are added or the depth
+ * budget is exhausted, so wrapper chains of arbitrary depth (up to maxDepth)
+ * resolve back to the original SDK call. Cycle protection lives in
+ * `resolveExportedMatches` via a per-call visited set.
+ *
+ * @param options.maxDepth — Max wrapper-chain depth (max fixpoint iterations).
+ *   Each iteration extends propagation by one wrapper hop, so `maxDepth=1`
+ *   means "direct callee only" (no wrapper-of-a-wrapper resolution),
+ *   `maxDepth=2` means "callee and one wrapper level above," etc. Values ≤ 0
+ *   are clamped up to 1 (at least one pass always runs); defaults to 3.
  *
  * @returns Map from relativePath → augmented AstCallMatch[] (original + propagated).
  *          Files with no propagated matches still appear in the map with their
  *          original matches.
  */
 export function runCrossFileResolution(
-  files: PerFileResult[]
+  files: PerFileResult[],
+  options: CrossFileResolutionOptions = {}
 ): Map<string, AstCallMatch[]> {
+  const maxDepth = Math.max(1, options.maxDepth ?? DEFAULT_MAX_DEPTH);
   const normalizedKnown = new Set(files.map((f) => normalizePath(f.filePath)));
   const sourceByFile = new Map(files.map((f) => [normalizePath(f.filePath), f.source]));
-
-  // Normalize registry keys
-  const rawRegistry = buildExportRegistry(files);
-  const registry: ExportRegistry = new Map();
-  for (const [k, v] of rawRegistry) registry.set(normalizePath(k), v);
+  const relativePathByNormalized = new Map(
+    files.map((f) => [normalizePath(f.filePath), f.relativePath])
+  );
 
   const output = new Map<string, AstCallMatch[]>();
-
-  // Start with original matches for every file
+  const seenKeysByFile = new Map<string, Set<string>>();
   for (const f of files) {
-    output.set(f.relativePath, [...f.result.matches]);
+    const initial = [...f.result.matches];
+    output.set(f.relativePath, initial);
+    const seen = new Set<string>();
+    for (const m of initial) seen.add(matchDedupeKey(m));
+    seenKeysByFile.set(f.relativePath, seen);
   }
 
-  for (const caller of files) {
-    const callerPath = normalizePath(caller.filePath);
-    const augmented = output.get(caller.relativePath)!;
+  // matchesByNormalizedFile is the live, augmented view used to rebuild the
+  // export registry between fixpoint iterations.
+  const matchesByNormalizedFile = new Map<string, AstCallMatch[]>();
+  for (const f of files) {
+    matchesByNormalizedFile.set(normalizePath(f.filePath), output.get(f.relativePath)!);
+  }
 
-    // ── Regular import propagation ─────────────────────────────────────────
+  // ── Precompute per-caller invariants ONCE (source never changes between
+  //    fixpoint iterations, so neither do these). ─────────────────────────────
+  const callerContexts: CallerContext[] = files.map((caller) => {
+    const callerPath = normalizePath(caller.filePath);
     const imports = extractRelativeImports(caller.source);
 
-    for (const { localName, specifier } of imports) {
-      const resolvedFile = resolveImportPath(callerPath, specifier, normalizedKnown);
-      if (!resolvedFile) continue;
+    const callSiteLinesByName = new Map<string, number[]>();
+    for (const { localName } of imports) {
+      if (!callSiteLinesByName.has(localName)) {
+        callSiteLinesByName.set(localName, extractCallSiteLines(caller.source, localName));
+      }
+    }
 
-      // Find all call sites in this file that reference the imported name
-      const callSites = caller.result.matches.filter((m) => {
-        const chain = m.methodChain.toLowerCase();
-        const local = localName.toLowerCase();
-        return (
-          chain === local ||
-          chain.startsWith(local + ".") ||
-          chain.includes("." + local + ".") ||
-          chain.endsWith("." + local)
+    const middlewareByName = new Map<string, ImportedName | null>();
+    const middlewareUseLineByName = new Map<string, number | null>();
+    for (const mwName of caller.result.middlewareQueue) {
+      middlewareByName.set(mwName, imports.find((i) => i.localName === mwName) ?? null);
+      middlewareUseLineByName.set(mwName, findMiddlewareUseLine(caller.source, mwName));
+    }
+
+    return {
+      caller,
+      callerPath,
+      callerRelative: caller.relativePath,
+      imports,
+      callSiteLinesByName,
+      middlewareByName,
+      middlewareUseLineByName,
+    };
+  });
+
+  for (let iter = 0; iter < maxDepth; iter++) {
+    const rawRegistry = buildExportRegistry(files, matchesByNormalizedFile);
+    const registry: ExportRegistry = new Map();
+    for (const [k, v] of rawRegistry) registry.set(normalizePath(k), v);
+
+    let addedThisPass = 0;
+
+    const tryPush = (relativePath: string, candidate: AstCallMatch): void => {
+      const key = matchDedupeKey(candidate);
+      const seen = seenKeysByFile.get(relativePath)!;
+      if (seen.has(key)) return;
+      seen.add(key);
+      output.get(relativePath)!.push(candidate);
+      addedThisPass++;
+    };
+
+    for (const ctx of callerContexts) {
+      const { caller, callerPath, callerRelative, imports, callSiteLinesByName } = ctx;
+
+      // ── Regular import propagation ─────────────────────────────────────────
+      for (const { localName, specifier } of imports) {
+        const resolvedFile = resolveImportPath(callerPath, specifier, normalizedKnown);
+        if (!resolvedFile) continue;
+
+        // Find all call sites in this file that reference the imported name
+        const callSites = caller.result.matches.filter((m) => {
+          const chain = m.methodChain.toLowerCase();
+          const local = localName.toLowerCase();
+          return (
+            chain === local ||
+            chain.startsWith(local + ".") ||
+            chain.includes("." + local + ".") ||
+            chain.endsWith("." + local)
+          );
+        });
+
+        // If no explicit call site found in matches, look for the name in source
+        // as a bare invocation (call site might not be in matches because it has
+        // no known provider — but the callee does). Precomputed once per caller.
+        const callSiteLines = callSiteLinesByName.get(localName) ?? [];
+
+        const calleeMatches = resolveExportedMatches(
+          localName,
+          resolvedFile,
+          registry,
+          sourceByFile,
+          normalizedKnown,
+          0
         );
-      });
+        if (!calleeMatches || calleeMatches.length === 0) continue;
 
-      // If no explicit call site found in matches, look for the name in source
-      // as a bare invocation (call site might not be in matches because it has
-      // no known provider — but the callee does).
-      const callSiteLines = extractCallSiteLines(caller.source, localName);
-
-      const calleeMatches = resolveExportedMatches(
-        localName,
-        resolvedFile,
-        registry,
-        sourceByFile,
-        normalizedKnown,
-        0
-      );
-      if (!calleeMatches || calleeMatches.length === 0) continue;
-
-      if (callSites.length > 0) {
-        // Propagate using AST-detected call site context
-        for (const site of callSites) {
-          for (const callee of calleeMatches) {
-            augmented.push(
-              cloneWithCallerContext(
-                callee,
-                site.line,
-                site.frequency,
-                site.loopContext,
-                false,
-                resolvedFile,
-                callerPath
-              )
-            );
+        if (callSites.length > 0) {
+          for (const site of callSites) {
+            for (const callee of calleeMatches) {
+              tryPush(
+                callerRelative,
+                cloneWithCallerContext(
+                  callee,
+                  site.line,
+                  site.frequency,
+                  site.loopContext,
+                  false,
+                  resolvedFile,
+                  callerPath
+                )
+              );
+            }
+          }
+        } else if (callSiteLines.length > 0) {
+          for (const lineNum of callSiteLines) {
+            for (const callee of calleeMatches) {
+              tryPush(
+                callerRelative,
+                cloneWithCallerContext(callee, lineNum, "single", false, false, resolvedFile, callerPath)
+              );
+            }
           }
         }
-      } else if (callSiteLines.length > 0) {
-        // Fallback: propagate at each source-detected call site line with "single" frequency
-        for (const lineNum of callSiteLines) {
-          for (const callee of calleeMatches) {
-            augmented.push(
-              cloneWithCallerContext(callee, lineNum, "single", false, false, resolvedFile, callerPath)
-            );
-          }
+      }
+
+      // ── Middleware propagation ─────────────────────────────────────────────
+      for (const mwName of caller.result.middlewareQueue) {
+        const importEntry = ctx.middlewareByName.get(mwName);
+        if (!importEntry) continue;
+
+        const resolvedFile = resolveImportPath(callerPath, importEntry.specifier, normalizedKnown);
+        if (!resolvedFile) continue;
+
+        const calleeMatches = resolveExportedMatches(
+          mwName,
+          resolvedFile,
+          registry,
+          sourceByFile,
+          normalizedKnown,
+          0
+        );
+        if (!calleeMatches || calleeMatches.length === 0) continue;
+
+        const useLine = ctx.middlewareUseLineByName.get(mwName) ?? null;
+
+        for (const callee of calleeMatches) {
+          tryPush(
+            callerRelative,
+            cloneWithCallerContext(
+              callee,
+              useLine ?? callee.line,
+              "single",
+              false,
+              true,
+              resolvedFile,
+              callerPath
+            )
+          );
         }
       }
     }
 
-    // ── Middleware propagation ─────────────────────────────────────────────
-    for (const mwName of caller.result.middlewareQueue) {
-      // Find where this name was imported from
-      const imports2 = extractRelativeImports(caller.source);
-      const importEntry = imports2.find((i) => i.localName === mwName);
-      if (!importEntry) continue;
+    if (addedThisPass === 0) break;
 
-      const resolvedFile = resolveImportPath(callerPath, importEntry.specifier, normalizedKnown);
-      if (!resolvedFile) continue;
-
-      const calleeMatches = resolveExportedMatches(
-        mwName,
-        resolvedFile,
-        registry,
-        sourceByFile,
-        normalizedKnown,
-        0
-      );
-      if (!calleeMatches || calleeMatches.length === 0) continue;
-
-      // Find where app.use(mwName) appears in source
-      const useLine = findMiddlewareUseLine(caller.source, mwName);
-
-      for (const callee of calleeMatches) {
-        augmented.push(
-          cloneWithCallerContext(
-            callee,
-            useLine ?? callee.line,
-            "single",
-            false,
-            true,
-            resolvedFile,
-            callerPath
-          )
-        );
-      }
+    // Refresh the live registry view so the next iteration can see matches that
+    // were just propagated into each caller's exported function bodies.
+    for (const [normalized, relPath] of relativePathByNormalized) {
+      matchesByNormalizedFile.set(normalized, output.get(relPath)!);
     }
   }
 
