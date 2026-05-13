@@ -1,0 +1,53 @@
+name: benchmark
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: benchmark-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build extension
+        run: npm run build:ext
+
+      - name: Read fixtures SHA
+        id: sha
+        run: echo "value=$(cat .benchmark-fixtures-sha)" >> "$GITHUB_OUTPUT"
+
+      - name: Clone fixtures repo at pinned SHA
+        run: |
+          git clone --depth 1 https://github.com/recost-dev/extension_benchmark.git benchmark-fixtures
+          cd benchmark-fixtures
+          git fetch --depth 1 origin ${{ steps.sha.outputs.value }}
+          git checkout ${{ steps.sha.outputs.value }}
+
+      - name: Run benchmark
+        run: npm run benchmark -- --fixtures ./benchmark-fixtures --report benchmark/report.json
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: benchmark/report.json
+          if-no-files-found: ignore
