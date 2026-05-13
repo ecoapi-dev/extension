@@ -9,6 +9,7 @@ import { createProject, submitScan, getAllEndpoints, getAllSuggestions } from ".
 import type { HostMessage, KeyServiceId } from "../messages";
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "../analysis/types";
 import { classifyEndpointScope, detectEndpointProvider } from "../scanner/endpoint-classification";
+import { computeEndpointId } from "../scanner/endpoint-id";
 import { classifyPricing, calculateSavings } from "../scan-results";
 import { buildSnapshot } from "../intelligence/builder";
 import { scoreSnapshot } from "../intelligence/scorer";
@@ -60,6 +61,7 @@ export interface ScanPublishingHandlerContext {
   sendRecostKeyStatusUpdate(): Promise<void>;
   resetChatHistory(): void;
   exportDebugScanResults(payload: ExportDebugPayload): Promise<void>;
+  pruneSavedScenariosAgainst(endpoints: EndpointRecord[]): Promise<void>;
 }
 
 function normalizeDescription(value: string): string {
@@ -398,6 +400,7 @@ function mergeRemoteAndLocalEndpoints(
   }
 
   const syntheticByMethodUrl = new Map<string, EndpointRecord>();
+  const emittedSyntheticIds = new Set<string>();
   for (const call of localCalls) {
     if (!shouldIncludeSynthetic(call)) continue;
     const key = buildEndpointKey(call.method, call.url);
@@ -438,8 +441,22 @@ function mergeRemoteAndLocalEndpoints(
       const canonicalUrl = canonicalizeEndpointUrl(call.url);
       const provider = call.provider ?? detectEndpointProvider(canonicalUrl);
       const callsPerDay = call.frequency === "per-request" ? 100 : call.library === "route-def" ? 0 : 1;
+      const stableId = computeEndpointId({
+        provider,
+        methodSignature: call.methodSignature,
+        filePath: call.file,
+        enclosingFunction: call.enclosingFunction,
+        url: canonicalUrl,
+      });
+      let id = stableId;
+      let suffix = 1;
+      while (emittedSyntheticIds.has(id)) {
+        suffix += 1;
+        id = `${stableId}_${suffix}`;
+      }
+      emittedSyntheticIds.add(id);
       syntheticByMethodUrl.set(key, {
-        id: `local-${scanId}-${syntheticByMethodUrl.size + 1}`,
+        id,
         projectId,
         scanId,
         provider,
@@ -583,6 +600,7 @@ export class ScanPublishingHandler {
 
         const externalEndpoints = endpoints.filter((ep) => ep.scope !== "internal");
         this.ctx.setLastEndpoints(externalEndpoints);
+        void this.ctx.pruneSavedScenariosAgainst(externalEndpoints);
         this.ctx.setLastSuggestions(mergedSuggestions);
         this.ctx.setLastSummary({ ...summary, totalEndpoints: externalEndpoints.length });
         this.ctx.postMessage({
@@ -697,6 +715,7 @@ export class ScanPublishingHandler {
         const endpoints = mergeRemoteAndLocalEndpoints(remoteEndpoints, apiCalls, projectId, scanResult.scanId);
         const externalEndpoints = endpoints.filter((ep) => ep.scope !== "internal");
         this.ctx.setLastEndpoints(externalEndpoints);
+        void this.ctx.pruneSavedScenariosAgainst(externalEndpoints);
         const aggressiveSuggestions = buildAggressiveSuggestions(endpoints, taggedRemoteSuggestions, localWasteFindings);
         const mergedSuggestions = mergeLocalWasteFindings(
           aggressiveSuggestions,

@@ -1,3 +1,11 @@
+/** Mirror of src/scanner/source-span.ts — kept in sync manually. Lines 1-based, columns 0-based exclusive. */
+export interface SourceSpan {
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+}
+
 export type EndpointStatus =
   | "normal"
   | "redundant"
@@ -21,6 +29,7 @@ export interface EndpointRecord {
   callSites: {
     file: string;
     line: number;
+    span?: SourceSpan;
     library: string;
     frequency?: string;
     frequencyClass?: string;

@@ -1,5 +1,6 @@
 import * as path from "path";
 import type { ApiCallInput } from "../analysis/types";
+import type { SourceSpan } from "./source-span";
 import { matchLine, matchRouteDefinitionLine, isInsideLoop } from "./patterns";
 import { detectLocalWasteFindingsInText, type LocalWasteFinding } from "./local-waste-detector";
 import { scanFileWithAst, type AstCallMatch } from "../ast/ast-scanner";
@@ -90,6 +91,7 @@ function astMatchToApiCallInput(match: AstCallMatch, file: string): ApiCallInput
   return {
     file,
     line: match.line,
+    span: match.span,
     method,
     url,
     library,
@@ -97,6 +99,7 @@ function astMatchToApiCallInput(match: AstCallMatch, file: string): ApiCallInput
     frequencyClass: match.frequency,
     provider: match.provider,
     methodSignature: match.methodChain,
+    enclosingFunction: match.enclosingFunction,
     costModel,
     batchCapable: match.batchCapable,
     cacheCapable: match.cacheCapable,
@@ -168,9 +171,19 @@ export async function scanFiles(
           const key = `${entry.relativePath}:${lineNum}:${route.method}:${route.url}:${route.library}`;
           if (dedupe.has(key)) continue;
           dedupe.add(key);
+          // span: regex matched a substring on this line; we can't recover the
+          // exact match offset here without a richer matchLine API, so report a
+          // line-wide span: column 0 → end of line.
+          const span: SourceSpan = {
+            startLine: lineNum,
+            startColumn: 0,
+            endLine: lineNum,
+            endColumn: line.length,
+          };
           allCalls.push({
             file: entry.relativePath,
             line: lineNum,
+            span,
             method: route.method,
             url: route.url,
             library: route.library,
@@ -189,9 +202,19 @@ export async function scanFiles(
           const key = `${entry.relativePath}:${lineNum}:${match.method}:${match.url}:${match.library}`;
           if (dedupe.has(key)) continue;
           dedupe.add(key);
+          // span: regex matched a substring on this line; we can't recover the
+          // exact match offset here without a richer matchLine API, so report a
+          // line-wide span: column 0 → end of line.
+          const span: SourceSpan = {
+            startLine: lineNum,
+            startColumn: 0,
+            endLine: lineNum,
+            endColumn: line.length,
+          };
           allCalls.push({
             file: entry.relativePath,
             line: lineNum,
+            span,
             method: match.method,
             url: match.url,
             library: match.library,

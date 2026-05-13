@@ -4,6 +4,9 @@
  * - Lines are 1-based to match VSCode's display convention.
  * - Columns are 0-based to match tree-sitter's `startPosition.column`
  *   and VSCode's `Position` constructor.
+ * - `endLine`/`endColumn` are **exclusive** ends (one past the last
+ *   character of the span), consistent with `vscode.Range` and
+ *   tree-sitter's `endPosition`.
  */
 export interface SourceSpan {
   startLine: number;

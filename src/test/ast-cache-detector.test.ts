@@ -15,21 +15,27 @@
 import assert from "node:assert/strict";
 import { detectCacheWaste } from "../ast/waste/cache-detector";
 import type { AstCallMatch } from "../ast/ast-scanner";
+import { pointSpan } from "../scanner/source-span";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeMatch(overrides: Partial<AstCallMatch>): AstCallMatch {
+  const line = overrides.line ?? 10;
+  const column = overrides.column ?? 0;
   return {
     kind: "sdk",
     provider: "openai",
     packageName: "openai",
     methodChain: "client.chat.completions.create",
+    confidence: 1,
     method: "POST",
     endpoint: "/v1/chat/completions",
-    line: 10,
-    column: 0,
+    line,
+    column,
+    span: pointSpan(line, column),
     frequency: "single",
     loopContext: false,
+    enclosingFunction: null,
     streaming: false,
     batchCapable: false,
     cacheCapable: false,

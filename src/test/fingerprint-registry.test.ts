@@ -35,10 +35,11 @@ function findMethod(provider: ProviderFingerprint, pattern: string): MethodFinge
 
 // ── 1. Schema validation ─────────────────────────────────────────────────────
 
-run("all 10 providers are present", () => {
+run("all expected providers are present", () => {
   const expected = [
     "openai", "anthropic", "stripe", "supabase", "firebase",
     "aws-bedrock", "gemini", "cohere", "mistral", "vertex-ai",
+    "elevenlabs",
   ];
   for (const id of expected) {
     assert.ok(
@@ -46,7 +47,7 @@ run("all 10 providers are present", () => {
       `missing provider: ${id}`
     );
   }
-  assert.equal(ALL_PROVIDERS.length, 10);
+  assert.equal(ALL_PROVIDERS.length, expected.length);
 });
 
 run("every provider has required top-level fields", () => {
@@ -395,9 +396,9 @@ run("lookupHost: empty string returns null", () => {
 });
 
 // getAllProviders
-run("getAllProviders: returns all 10 providers", () => {
+run("getAllProviders: returns all providers", () => {
   const providers = getAllProviders();
-  assert.equal(providers.length, 10);
+  assert.equal(providers.length, ALL_PROVIDERS.length);
   assert.ok(providers.includes("openai"));
   assert.ok(providers.includes("anthropic"));
   assert.ok(providers.includes("stripe"));

@@ -29,6 +29,7 @@ import {
 } from "./key-management";
 import { resolveWorkspaceFilePathSafely } from "./workspace-file-access";
 import { getOutputChannel } from "./output";
+import type { SourceSpan } from "./scanner/source-span";
 import { ChatHandler } from "./webview/chat-handler";
 import { KeyManagementHandler } from "./webview/key-management-handler";
 import { SimulationHandler } from "./webview/simulation-handler";
@@ -70,7 +71,7 @@ export interface WebviewMessageHandlers {
   chat(text: string, provider: string, model: string): Promise<void>;
   modelChanged(provider: string, model: string): Promise<void>;
   applyFix(code: string, file: string, line?: number): Promise<void>;
-  openFile(file: string, line?: number): Promise<void>;
+  openFile(file: string, line?: number, span?: SourceSpan): Promise<void>;
   openDashboard(): Promise<void>;
   runSimulation(input: SimulatorInput): void | Promise<void>;
   getAllKeyStatuses(): Promise<void>;
@@ -101,7 +102,7 @@ export async function dispatchWebviewMessage(
       case "chat": await handlers.chat(message.text, message.provider, message.model); return { status: "ok" };
       case "modelChanged": await handlers.modelChanged(message.provider, message.model); return { status: "ok" };
       case "applyFix": await handlers.applyFix(message.code, message.file, message.line); return { status: "ok" };
-      case "openFile": await handlers.openFile(message.file, message.line); return { status: "ok" };
+      case "openFile": await handlers.openFile(message.file, message.line, message.span); return { status: "ok" };
       case "openDashboard": await handlers.openDashboard(); return { status: "ok" };
       case "runSimulation": await handlers.runSimulation(message.input); return { status: "ok" };
       case "getAllKeyStatuses": await handlers.getAllKeyStatuses(); return { status: "ok" };
@@ -252,6 +253,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       sendRecostKeyStatusUpdate: () => this.sendKeyStatusUpdate("recost", "recost"),
       resetChatHistory: () => this.chatHandler.resetHistory(),
       exportDebugScanResults: (payload) => this.exportDebugScanResults(payload),
+      pruneSavedScenariosAgainst: (endpoints) => this.simulationHandler.pruneAgainst(endpoints),
     });
   }
 
@@ -525,7 +527,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
         await this.sendAllKeyStatuses();
       },
       applyFix: (code, file, line) => this.handleApplyFix(code, file, line),
-      openFile: (file, line) => this.handleOpenFile(file, line),
+      openFile: (file, line, span) => this.handleOpenFile(file, line, span),
       openDashboard: () => this.handleOpenDashboard(),
       runSimulation: (input) => this.simulationHandler.handleRunSimulation(input),
       getAllKeyStatuses: () => this.sendAllKeyStatuses(),
@@ -578,7 +580,6 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       vscode.window.showErrorMessage(`ReCost: ${message}`);
     }
   }
-
 
   private handleRunAiReview() {
     return this.chatHandler.handleRunAiReview();
@@ -736,7 +737,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async handleOpenFile(file: string, line?: number) {
+  private async handleOpenFile(file: string, line?: number, span?: SourceSpan) {
     try {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (!workspaceFolder) return;
@@ -744,13 +745,33 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       const fileUri = await resolveWorkspaceFileSafely(workspaceFolder, file);
       if (!fileUri) return;
       const doc = await vscode.workspace.openTextDocument(fileUri);
-      const selection = line
-        ? new vscode.Range(line - 1, 0, line - 1, 0)
-        : undefined;
-      await vscode.window.showTextDocument(doc, {
-        selection,
+
+      // Stale spans (e.g. from a re-scan after the file shrank) can throw inside
+      // vscode.Range and be swallowed by the catch — clamp to the document so
+      // click-back always lands somewhere visible.
+      const lastLineIdx = Math.max(doc.lineCount - 1, 0);
+      const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+      const range = span
+        ? (() => {
+            const startLine = clamp(span.startLine - 1, 0, lastLineIdx);
+            const endLine = clamp(span.endLine - 1, startLine, lastLineIdx);
+            const startCol = clamp(span.startColumn, 0, doc.lineAt(startLine).text.length);
+            const endCol = clamp(span.endColumn, 0, doc.lineAt(endLine).text.length);
+            return new vscode.Range(startLine, startCol, endLine, endCol);
+          })()
+        : line
+          ? new vscode.Range(line - 1, 0, line - 1, 0)
+          : undefined;
+
+      const editor = await vscode.window.showTextDocument(doc, {
+        selection: range,
         viewColumn: vscode.ViewColumn.One,
       });
+
+      if (range) {
+        editor.selection = new vscode.Selection(range.start, range.end);
+        editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      }
     } catch {
       // File not found
     }

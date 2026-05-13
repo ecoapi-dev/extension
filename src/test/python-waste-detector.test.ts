@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { AstCallMatch } from "../ast/ast-scanner";
 import { detectPythonWaste } from "../scanner/python-waste-detector";
 import type { LocalWasteFinding } from "../scanner/local-waste-detector";
+import { pointSpan } from "../scanner/source-span";
 
 async function run(name: string, fn: () => Promise<void>): Promise<void> {
   try {
@@ -14,16 +15,20 @@ async function run(name: string, fn: () => Promise<void>): Promise<void> {
 }
 
 function makeMatch(overrides: Partial<AstCallMatch>): AstCallMatch {
+  const line = overrides.line ?? 1;
+  const column = overrides.column ?? 0;
   return {
     kind: "sdk",
     provider: "openai",
     packageName: "openai",
     methodChain: "client.chat.completions.create",
     confidence: 1,
-    line: 1,
-    column: 0,
+    line,
+    column,
+    span: pointSpan(line, column),
     frequency: "single",
     loopContext: false,
+    enclosingFunction: null,
     ...overrides,
   };
 }
@@ -146,8 +151,10 @@ async def fetch_all(prompts):
           confidence: 1,
           line: 1,
           column: 0,
+          span: pointSpan(1, 0),
           frequency: "single",
           loopContext: false,
+          enclosingFunction: null,
         },
       ],
       `client.chat.completions.create({ model: "gpt-4o-mini" });`,

@@ -227,5 +227,5 @@ run("buildRepoIntelligenceSnapshot keeps distinct same-line API calls with deter
   const calls = Object.values(snapshot.apiCalls).filter((apiCall) => apiCall.filePath === "dist-test/api-client.js");
   assert.equal(calls.length, 2);
   assert.equal(new Set(calls.map((apiCall) => apiCall.id)).size, 2);
-  assert.ok(calls.every((apiCall) => apiCall.id.startsWith("dist-test/api-client.js:43:")));
+  assert.ok(calls.every((apiCall) => /^ep_[a-z0-9]+(?:_L\d+)?$/.test(apiCall.id)));
 });

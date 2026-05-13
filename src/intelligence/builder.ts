@@ -1,5 +1,6 @@
 import type { ApiCallInput } from "../analysis/types";
 import type { LocalWasteFinding } from "../scanner/local-waste-detector";
+import { computeEndpointId } from "../scanner/endpoint-id";
 import type { ApiCallNode, FileNode, FindingNode, ProviderNode, RepoIntelligenceSnapshot } from "./types";
 
 export interface BuildRepoIntelligenceSnapshotInput {
@@ -27,33 +28,14 @@ function normalizeCrossFileOrigin(
   };
 }
 
-function makeStableApiCallFingerprint(call: ApiCallInput): string {
-  const origin = normalizeCrossFileOrigin(call.crossFileOrigin);
-  const source = [
-    call.method,
-    call.url,
-    call.provider ?? "null",
-    call.library ?? "null",
-    call.methodSignature ?? "null",
-    call.costModel ?? "null",
-    call.frequencyClass ?? "null",
-    call.batchCapable ? "1" : "0",
-    call.cacheCapable ? "1" : "0",
-    call.streaming ? "1" : "0",
-    call.isMiddleware ? "1" : "0",
-    origin ? `${origin.file}:${origin.functionName}` : "null",
-  ].join("|");
-
-  let hash = 2166136261;
-  for (let i = 0; i < source.length; i += 1) {
-    hash ^= source.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
-}
-
 function makeApiCallId(filePath: string, call: ApiCallInput): string {
-  return `${filePath}:${call.line}:${makeStableApiCallFingerprint(call)}`;
+  return computeEndpointId({
+    provider: call.provider,
+    methodSignature: call.methodSignature,
+    filePath,
+    enclosingFunction: call.enclosingFunction,
+    url: call.url,
+  });
 }
 
 function makeStableFingerprint(finding: LocalWasteFinding): string {
@@ -196,7 +178,10 @@ export function buildRepoIntelligenceSnapshot(
 
     for (const call of calls) {
       const provider = normalizeProvider(call.provider);
-      const apiCallId = makeApiCallId(filePath, call);
+      let apiCallId = makeApiCallId(filePath, call);
+      if (apiCalls[apiCallId]) {
+        apiCallId = `${apiCallId}_L${call.line}`;
+      }
       ensureUniqueId(apiCalls, apiCallId, "apiCall");
 
       const apiCallNode: ApiCallNode = {
@@ -204,6 +189,7 @@ export function buildRepoIntelligenceSnapshot(
         fileId: filePath,
         filePath,
         line: call.line,
+        span: call.span ?? null,
         provider,
         method: call.method,
         url: call.url,

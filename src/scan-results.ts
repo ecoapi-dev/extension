@@ -2,6 +2,7 @@ import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "./an
 import type { LocalWasteFinding } from "./scanner/local-waste-detector";
 import { classifyEndpointScope, detectEndpointProvider } from "./scanner/endpoint-classification";
 import { estimateLocalMonthlyCost } from "./intelligence/cost-utils";
+import { computeEndpointId } from "./scanner/endpoint-id";
 
 export interface FinalScanResults {
   endpoints: EndpointRecord[];
@@ -340,6 +341,7 @@ export function mergeRemoteAndLocalEndpoints(
   }
 
   const syntheticByMethodUrl = new Map<string, EndpointRecord>();
+  const emittedSyntheticIds = new Set<string>();
   for (const call of localCalls) {
     if (!shouldIncludeSynthetic(call)) continue;
     const key = buildEndpointKey(call.method, call.url);
@@ -352,6 +354,7 @@ export function mergeRemoteAndLocalEndpoints(
         endpoint.callSites.push({
           file: call.file,
           line: call.line,
+          span: call.span,
           library: call.library ?? "",
           frequency: call.frequency,
           frequencyClass: call.frequencyClass,
@@ -376,8 +379,24 @@ export function mergeRemoteAndLocalEndpoints(
       const canonicalUrl = canonicalizeEndpointUrl(call.url);
       const provider = call.provider ?? detectEndpointProvider(canonicalUrl);
       const callsPerDay = call.frequency === "per-request" ? 100 : call.library === "route-def" ? 0 : 1;
+      const stableId = computeEndpointId({
+        provider,
+        methodSignature: call.methodSignature,
+        filePath: call.file,
+        enclosingFunction: call.enclosingFunction,
+        url: canonicalUrl,
+      });
+      // Disambiguate the unlikely collision with an already-emitted synthetic
+      // (different method, same masked URL, etc.).
+      let id = stableId;
+      let suffix = 1;
+      while (emittedSyntheticIds.has(id)) {
+        suffix += 1;
+        id = `${stableId}_${suffix}`;
+      }
+      emittedSyntheticIds.add(id);
       syntheticByMethodUrl.set(key, {
-        id: `local-${scanId}-${syntheticByMethodUrl.size + 1}`,
+        id,
         projectId,
         scanId,
         provider,
@@ -388,6 +407,7 @@ export function mergeRemoteAndLocalEndpoints(
         callSites: [{
           file: call.file,
           line: call.line,
+          span: call.span,
           library: call.library ?? "",
           frequency: call.frequency,
           frequencyClass: call.frequencyClass,
@@ -418,6 +438,7 @@ export function mergeRemoteAndLocalEndpoints(
       synthetic.callSites.push({
         file: call.file,
         line: call.line,
+        span: call.span,
         library: call.library ?? "",
         frequency: call.frequency,
         frequencyClass: call.frequencyClass,
