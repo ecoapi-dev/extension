@@ -81,12 +81,12 @@ function validateEndpoint(value: unknown, fixturePath: string, index: number): E
     throw new ExpectedJsonValidationError(fixturePath, `endpoints[${index}] must be an object`);
   }
   const e = value as Record<string, unknown>;
-  if (typeof e.file !== "string") throw new ExpectedJsonValidationError(fixturePath, `endpoints[${index}].file must be a string`);
+  if (typeof e.file !== "string" || e.file.length === 0) throw new ExpectedJsonValidationError(fixturePath, `endpoints[${index}].file must be a non-empty string`);
   if (typeof e.line !== "number" || !Number.isInteger(e.line) || e.line < 1) {
     throw new ExpectedJsonValidationError(fixturePath, `endpoints[${index}].line must be a 1-based integer`);
   }
-  if (typeof e.provider !== "string") throw new ExpectedJsonValidationError(fixturePath, `endpoints[${index}].provider must be a string`);
-  if (typeof e.method !== "string") throw new ExpectedJsonValidationError(fixturePath, `endpoints[${index}].method must be a string`);
+  if (typeof e.provider !== "string" || e.provider.length === 0) throw new ExpectedJsonValidationError(fixturePath, `endpoints[${index}].provider must be a non-empty string`);
+  if (typeof e.method !== "string" || e.method.length === 0) throw new ExpectedJsonValidationError(fixturePath, `endpoints[${index}].method must be a non-empty string`);
   if (e.must_detect !== true) throw new ExpectedJsonValidationError(fixturePath, `endpoints[${index}].must_detect must be true`);
   return {
     file: e.file,
@@ -104,11 +104,11 @@ function validateFinding(value: unknown, fixturePath: string, index: number): Ex
     throw new ExpectedJsonValidationError(fixturePath, `findings[${index}] must be an object`);
   }
   const f = value as Record<string, unknown>;
-  if (typeof f.file !== "string") throw new ExpectedJsonValidationError(fixturePath, `findings[${index}].file must be a string`);
+  if (typeof f.file !== "string" || f.file.length === 0) throw new ExpectedJsonValidationError(fixturePath, `findings[${index}].file must be a non-empty string`);
   if (typeof f.line !== "number" || !Number.isInteger(f.line) || f.line < 1) {
     throw new ExpectedJsonValidationError(fixturePath, `findings[${index}].line must be a 1-based integer`);
   }
-  if (typeof f.type !== "string") throw new ExpectedJsonValidationError(fixturePath, `findings[${index}].type must be a string`);
+  if (typeof f.type !== "string" || f.type.length === 0) throw new ExpectedJsonValidationError(fixturePath, `findings[${index}].type must be a non-empty string`);
   if (f.is_true_positive !== true) throw new ExpectedJsonValidationError(fixturePath, `findings[${index}].is_true_positive must be true`);
   return {
     file: f.file,

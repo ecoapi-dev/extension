@@ -80,11 +80,11 @@ For each repo and overall:
 - When a PR legitimately improves metrics, the author updates `baseline.json` as part of the change.
 
 ### Acceptance criteria
-- [ ] At least 5 repos in the corpus, hand-labeled.
-- [ ] `npm run benchmark` produces a metrics report.
-- [ ] CI workflow runs on every PR.
-- [ ] Baseline committed; current metrics published in this doc once measured.
-- [ ] Regression gate prevents merging PRs that drop precision/recall.
+- [x] At least 5 repos in the corpus, hand-labeled.
+- [x] `npm run benchmark` produces a metrics report.
+- [x] CI workflow runs on every PR.
+- [x] Baseline committed; current metrics published in this doc once measured.
+- [x] Regression gate prevents merging PRs that drop precision/recall.
 
 ### Initial baseline (measured 2026-05-13)
 

@@ -67,7 +67,10 @@ function parseArgs(argv: string[]): CliArgs {
     else if (a === "--threshold") {
       const raw = requireValue(argv, ++i, a);
       const n = Number(raw);
-      if (!Number.isFinite(n)) { console.error(`Invalid --threshold value: ${raw}`); process.exit(2); }
+      if (!Number.isFinite(n) || n < 0) {
+        console.error(`Invalid --threshold value: ${raw} (must be a non-negative number)`);
+        process.exit(2);
+      }
       args.thresholdPp = n;
     }
     else if (a === "--update-baseline") args.updateBaseline = true;
@@ -137,23 +140,21 @@ function detectedFromScan(result: ScanResult, fixtureDir: string): { endpoints: 
   const srcDir = path.join(fixtureDir, "src");
   const scanRoot = fs.existsSync(srcDir) ? srcDir : fixtureDir;
 
-  // Dedupe by file+line: ast-scanner can emit multiple call-site entries per endpoint group
-  // (e.g. import line, constructor line, real call line) all sharing the same methodSignature.
-  // Without dedupe the runner double-counts phantom detections and torches precision.
+  // Dedupe by file+line+provider+method: ast-scanner can emit multiple call-site entries per
+  // endpoint group (e.g. import line, constructor line, real call line) all sharing the same
+  // methodSignature. Keying on provider+method as well preserves distinct calls that legitimately
+  // share a line (e.g. `Promise.all([a.create(), b.create()])`).
   const endpoints: DetectedEndpoint[] = [];
   const seenEndpoints = new Set<string>();
   for (const e of result.endpoints) {
+    const provider = e.provider ?? "unknown";
+    const method = e.methodSignature ?? e.method ?? "";
     for (const cs of e.callSites) {
       const relFile = path.relative(fixtureDir, path.resolve(scanRoot, cs.file)).replace(/\\/g, "/");
-      const key = `${relFile}:${cs.line}`;
+      const key = `${relFile}:${cs.line}:${provider}:${method}`;
       if (seenEndpoints.has(key)) continue;
       seenEndpoints.add(key);
-      endpoints.push({
-        file: relFile,
-        line: cs.line,
-        provider: e.provider ?? "unknown",
-        method: e.methodSignature ?? e.method ?? "",
-      });
+      endpoints.push({ file: relFile, line: cs.line, provider, method });
     }
   }
   const findings: DetectedFinding[] = [];
