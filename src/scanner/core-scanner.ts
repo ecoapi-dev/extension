@@ -194,19 +194,21 @@ export async function scanFiles(
         let matches = matchLine(line);
         if (matches.length === 0 && HTTP_CALL_HINT.test(line)) {
           // Multi-line regex expansion: catches SDK call patterns whose
-          // argument object spans several lines. We must skip this when any
-          // line in the look-ahead window was already AST-covered — otherwise
-          // a real call on line N produces phantom matches reported at
-          // lines N-1, N-2, ... (e.g. `import OpenAI from "openai"` on line 1
-          // would absorb a `client.chat.completions.create(...)` from line 5
-          // and re-emit it as a call at line 1). Fixes A6 / issue #78.
+          // argument object spans several lines. To avoid phantom matches
+          // (e.g. `import OpenAI from "openai"` on line 1 absorbing a real
+          // `client.chat.completions.create(...)` from line 5 and re-emitting
+          // it as a call at line 1), we bound the expansion at the first
+          // AST-covered line in the look-ahead window. Lines strictly before
+          // that boundary may still legitimately participate in a multi-line
+          // regex match. Fixes A6 / issue #78.
           const windowEnd = Math.min(lines.length, lineIndex + 6);
-          let astOverlap = false;
+          let firstAstCovered = -1;
           for (let k = lineIndex; k < windowEnd; k++) {
-            if (astCoveredLines.has(k + 1)) { astOverlap = true; break; }
+            if (astCoveredLines.has(k + 1)) { firstAstCovered = k; break; }
           }
-          if (!astOverlap) {
-            const multiLine = lines.slice(lineIndex, windowEnd).join("\n");
+          const expansionEnd = firstAstCovered === -1 ? windowEnd : firstAstCovered;
+          if (expansionEnd > lineIndex) {
+            const multiLine = lines.slice(lineIndex, expansionEnd).join("\n");
             matches = matchLine(multiLine);
           }
         }
