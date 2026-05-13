@@ -1,7 +1,7 @@
 import * as path from "path";
 import type { ApiCallInput } from "../analysis/types";
 import type { SourceSpan } from "./source-span";
-import { matchLine, matchRouteDefinitionLine, isInsideLoop } from "./patterns";
+import { matchLine, matchRouteDefinitionLine, isInsideLoop, type HttpCallMatch } from "./patterns";
 import { detectLocalWasteFindingsInText, type LocalWasteFinding } from "./local-waste-detector";
 import { scanFileWithAst, type AstCallMatch } from "../ast/ast-scanner";
 import { getLanguageForExtension } from "../ast/parser-loader";
@@ -9,9 +9,11 @@ import { runCrossFileResolution, type PerFileResult } from "../ast/cross-file-re
 import { detectCacheWaste } from "../ast/waste/cache-detector";
 import { detectBatchWaste } from "../ast/waste/batch-detector";
 import { detectConcurrencyWaste } from "../ast/waste/concurrency-detector";
-import { lookupMethod, isRegisteredProvider } from "./fingerprints/registry";
+import { lookupMethod, isRegisteredProvider, lookupHost } from "./fingerprints/registry";
 import { STDLIB_DENYLIST } from "./fingerprints/index";
 import { detectPythonWaste } from "./python-waste-detector";
+import { foldStringConstants } from "./constant-fold";
+import { parseHost } from "./patterns/utils";
 
 const HTTP_CALL_HINT =
   /\b(fetch|axios|got|superagent|ky|requests|http\.|\$http|openai|responses|completions|embeddings|moderations|vector_stores|vectorStores|assistants|threads|realtime|uploads|batches|containers|skills|videos|evals|images|audio|files|models|anthropic|claude|gemini|genai|bedrock|vertex|cohere|mistral|stripe|graphql|apollo|urql|relay|supabase|firebase|trpc|grpc)\b/i;
@@ -42,6 +44,52 @@ function isGenericDynamicUrl(url: string): boolean {
     return ["endpoint", "url", "path", "uri", "route"].includes(token);
   }
   return false;
+}
+
+/**
+ * A2 (issue #74): when a regex match produces a dynamic URL (template literal
+ * with same-file const interpolations, or a bare identifier wrapped in
+ * `<dynamic:NAME>`), try to fold it to a concrete URL using same-file string
+ * constants. If folding yields an http(s) URL whose host maps to a known
+ * provider in the fingerprint registry, re-classify `library` from the
+ * fallback "generic-http" to the resolved provider.
+ *
+ * Returns the original match if folding is not applicable or fails.
+ */
+function tryFoldRegexMatchUrl(match: HttpCallMatch, fileSource: string): HttpCallMatch {
+  const url = match.url;
+  if (!url) return match;
+  // Only attempt folding for matches that the high-confidence filter would
+  // otherwise drop. If the URL already starts with http(s)://, it has a
+  // provider attribution already (or will not benefit from folding).
+  if (/^https?:\/\//i.test(url)) return match;
+
+  // Build the expression to fold. Cases:
+  //  - "<dynamic:NAME>"  → fold NAME as a bare identifier
+  //  - URL containing "${…}"  → re-wrap in backticks and fold as template
+  //  - Otherwise no fold
+  let expression: string | null = null;
+  const dynamicMatch = url.match(/^<dynamic:([^>]+)>$/i);
+  if (dynamicMatch) {
+    expression = dynamicMatch[1].trim();
+  } else if (url.includes("${")) {
+    expression = "`" + url + "`";
+  }
+  if (!expression) return match;
+
+  const folded = foldStringConstants(expression, fileSource);
+  if (!folded) return match;
+
+  // Re-classify library via host lookup only when the folded URL is a real
+  // http URL with a known provider host. Path-only folds (e.g. "/users/123")
+  // are accepted as URL updates but keep the original library.
+  let library = match.library;
+  if (/^https?:\/\//i.test(folded)) {
+    const host = parseHost(folded);
+    const provider = host ? lookupHost(host) : null;
+    if (provider) library = provider;
+  }
+  return { ...match, url: folded, library };
 }
 
 function isHighConfidenceUrl(url: string): boolean {
@@ -192,6 +240,7 @@ export async function scanFiles(
         }
 
         let matches = matchLine(line);
+        let multiLineExpansion = false;
         if (matches.length === 0 && HTTP_CALL_HINT.test(line)) {
           // Multi-line regex expansion: catches SDK call patterns whose
           // argument object spans several lines. To avoid phantom matches
@@ -210,31 +259,64 @@ export async function scanFiles(
           if (expansionEnd > lineIndex) {
             const multiLine = lines.slice(lineIndex, expansionEnd).join("\n");
             matches = matchLine(multiLine);
+            if (matches.length > 0) {
+              multiLineExpansion = true;
+            }
           }
         }
 
-        for (const match of matches) {
+        for (const rawMatch of matches) {
+          // A2 (issue #74): try to fold same-file string constants in the URL
+          // before the high-confidence filter, so e.g. `fetch(\`${BASE}/path\`)`
+          // with `const BASE = "https://api.openai.com"` becomes a concrete
+          // provider-attributed call.
+          const folded = tryFoldRegexMatchUrl(rawMatch, text);
+          const didFold = folded.url !== rawMatch.url;
+          const match = folded;
           if (!isHighConfidenceUrl(match.url)) continue;
-          const key = `${entry.relativePath}:${lineNum}:${match.method}:${match.url}:${match.library}`;
+
+          // When folding fires inside a multi-line expansion, the expansion's
+          // starting line may be several lines above the actual call site
+          // (e.g. line 1 is `const OPENAI_BASE = "https://api.openai.com"`,
+          // line 5 is the real fetch — line 1's mention of "openai" triggered
+          // HTTP_CALL_HINT and the multi-line scan absorbed the line-5 fetch).
+          // Re-anchor to the line within the expansion containing the HTTP
+          // call kind so dedupe collapses redundant expansion starts onto the
+          // real call line. We scope this strictly to folded matches so that
+          // pre-A2 behaviour for non-folded multi-line matches is preserved.
+          let reportedLineIndex = lineIndex;
+          if (multiLineExpansion && didFold) {
+            const expansionEnd = Math.min(lines.length, lineIndex + 6);
+            for (let k = lineIndex; k < expansionEnd; k++) {
+              if (/\b(fetch|axios|got|ky|superagent|requests|httpx)\s*[.(]|http\.\w+\s*\(|\$http\.\w+\s*\(/.test(lines[k])) {
+                reportedLineIndex = k;
+                break;
+              }
+            }
+          }
+          const reportedLineNum = reportedLineIndex + 1;
+          const reportedLine = lines[reportedLineIndex] ?? line;
+
+          const key = `${entry.relativePath}:${reportedLineNum}:${match.method}:${match.url}:${match.library}`;
           if (dedupe.has(key)) continue;
           dedupe.add(key);
           // span: regex matched a substring on this line; we can't recover the
           // exact match offset here without a richer matchLine API, so report a
           // line-wide span: column 0 → end of line.
           const span: SourceSpan = {
-            startLine: lineNum,
+            startLine: reportedLineNum,
             startColumn: 0,
-            endLine: lineNum,
-            endColumn: line.length,
+            endLine: reportedLineNum,
+            endColumn: reportedLine.length,
           };
           allCalls.push({
             file: entry.relativePath,
-            line: lineNum,
+            line: reportedLineNum,
             span,
             method: match.method,
             url: match.url,
             library: match.library,
-            frequency: isInsideLoop(lines, lineIndex) ? "per-request" : "daily",
+            frequency: isInsideLoop(lines, reportedLineIndex) ? "per-request" : "daily",
           });
         }
       }
