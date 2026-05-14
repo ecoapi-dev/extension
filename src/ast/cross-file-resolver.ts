@@ -117,6 +117,7 @@ function findExportedFunctions(source: string): FunctionRange[] {
 
   const EXPORT_FN = /^export\s+(async\s+)?function\s+(\w+)/;
   const EXPORT_CONST = /^export\s+const\s+(\w+)(?:\s*:\s*[^=]+)?\s*=\s*(async\s+)?\(/;
+  const EXPORT_DEFAULT_FN = /^export\s+default\s+(async\s+)?function(?:\s+(\w+))?/;
 
   // Track brace depth to approximate end of each function body.
   // Simple approach: find the opening { after the declaration, count braces.
@@ -143,6 +144,17 @@ function findExportedFunctions(source: string): FunctionRange[] {
     const constMatch = EXPORT_CONST.exec(line);
     if (constMatch) {
       ranges.push({ name: constMatch[1], startLine: i + 1, endLine: findEndLine(i) });
+      continue;
+    }
+    // export default function ask(...) — register under both "default" sentinel and
+    // the function's actual name (if present) so both lookup paths work.
+    const defaultFnMatch = EXPORT_DEFAULT_FN.exec(line);
+    if (defaultFnMatch) {
+      const endLine = findEndLine(i);
+      ranges.push({ name: "default", startLine: i + 1, endLine });
+      if (defaultFnMatch[2]) {
+        ranges.push({ name: defaultFnMatch[2], startLine: i + 1, endLine });
+      }
     }
   }
 
@@ -372,14 +384,21 @@ function resolveExportedMatches(
   for (const re of reExports) {
     // Wildcard re-export (`export * from './other'`) — any name passes through.
     // Named re-export — only proceed if exportedName matches the requested name.
-    if (re.exportedName !== null && re.exportedName !== name) continue;
+    // Also allow `export { default } from './other'` to match any default import:
+    // when a consumer does `import ask from './barrel'`, the barrel may re-export
+    // the default slot explicitly via `export { default } from './api'`. In that
+    // case the requested name is the local alias ("ask"), not "default", so we
+    // need to follow the default re-export and look up "default" in the source.
+    if (re.exportedName !== null && re.exportedName !== name && re.exportedName !== "default") continue;
     const resolved = resolveImportPath(fromFile, re.specifier, knownFiles);
     if (!resolved) continue;
     // When the barrel aliases (`export { _internalAsk as ask }`), the source file
     // knows the symbol by its originalName — recurse with that name so the export
     // registry lookup finds the actual function.
     // For wildcards, the name passes through unchanged (originalName is null).
-    const lookupName = re.originalName ?? name;
+    // For `export { default }`, recurse with "default" so the registry finds the
+    // `export default function` entry in the source file.
+    const lookupName = re.exportedName === "default" ? "default" : (re.originalName ?? name);
     const found = resolveExportedMatches(lookupName, resolved, registry, sourceByFile, knownFiles, depth + 1, visited);
     if (found) return found;
   }
