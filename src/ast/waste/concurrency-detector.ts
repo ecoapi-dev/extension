@@ -149,6 +149,7 @@ function detectUnboundedConcurrency(
   isHotPath: boolean
 ): LocalWasteFinding | null {
   if (match.frequency !== "parallel") return null;
+  if (match.batchCapable === true) return null; // let batch detector handle it
 
   const win = windowText(source, match.line);
   if (CONCURRENCY_GUARD.test(win)) return null;
