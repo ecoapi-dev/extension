@@ -157,58 +157,121 @@ function astMatchToApiCallInput(match: AstCallMatch, file: string): ApiCallInput
   };
 }
 
+// ── Internal result type for the shared AST gather helper ────────────────────
+
+interface ResolvedFileResult {
+  filePath: string;
+  relativePath: string;
+  source: string;
+  matches: AstCallMatch[];
+}
+
+/**
+ * Scan all files in `access`, run cross-file resolution over the AST results,
+ * and return augmented per-file data. Files without AST coverage (unsupported
+ * extension) are still included with empty `matches` so the regex pass in
+ * `scanFiles()` can still see their source.
+ *
+ * This is the single call-site for `runCrossFileResolution` — both `scanFiles`
+ * and `detectLocalWastePatternsInFiles` delegate to it so resolution is applied
+ * consistently across all consumers.
+ */
+async function gatherResolvedAstMatches(
+  access: ScanFileAccess,
+  onProgress?: (progress: ScanProgress) => void
+): Promise<ResolvedFileResult[]> {
+  const files = [...access.files].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  const perFileResults: PerFileResult[] = [];
+  // Track all files including non-AST ones so regex passes still see them.
+  const allFiles: Array<{ filePath: string; relativePath: string; source: string; hasAst: boolean }> = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const entry = files[i];
+    try {
+      const text = await access.readFile(entry.absolutePath);
+      const ext = path.extname(entry.relativePath);
+      if (getLanguageForExtension(ext)) {
+        try {
+          const result = await scanFileWithAst(entry.absolutePath, async (fp: string) => {
+            try { return await access.readFile(fp); } catch { return null; }
+          });
+          perFileResults.push({
+            filePath: entry.absolutePath,
+            relativePath: entry.relativePath,
+            source: text,
+            result,
+          });
+          allFiles.push({ filePath: entry.absolutePath, relativePath: entry.relativePath, source: text, hasAst: true });
+        } catch {
+          // AST failed — include with empty matches so regex pass still runs
+          allFiles.push({ filePath: entry.absolutePath, relativePath: entry.relativePath, source: text, hasAst: false });
+        }
+      } else {
+        // Non-AST extension — include for regex-only processing
+        allFiles.push({ filePath: entry.absolutePath, relativePath: entry.relativePath, source: text, hasAst: false });
+      }
+    } catch {
+      // Skip unreadable files entirely
+    }
+    onProgress?.({ file: entry.relativePath, fileIndex: i + 1, fileTotal: files.length });
+  }
+
+  // Run cross-file resolution over all successfully parsed files.
+  let augmented: Map<string, AstCallMatch[]>;
+  try {
+    augmented = runCrossFileResolution(perFileResults);
+  } catch {
+    augmented = new Map(perFileResults.map((pf) => [pf.relativePath, pf.result.matches]));
+  }
+
+  // Build the final per-file result, merging augmented AST matches back in.
+  return allFiles.map((f) => ({
+    filePath: f.filePath,
+    relativePath: f.relativePath,
+    source: f.source,
+    matches: augmented.get(f.relativePath) ?? [],
+  }));
+}
+
 export async function scanFiles(
   access: ScanFileAccess,
   onProgress?: (progress: ScanProgress) => void
 ): Promise<ApiCallInput[]> {
-  const files = [...access.files].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   const allCalls: ApiCallInput[] = [];
   const dedupe = new Set<string>();
 
-  for (let i = 0; i < files.length; i++) {
-    const entry = files[i];
+  // Gather all files with cross-file-resolved AST matches in a single pass.
+  const resolvedFiles = await gatherResolvedAstMatches(access, onProgress);
 
-    try {
-      const text = await access.readFile(entry.absolutePath);
-      const lines = text.split("\n");
+  for (const rf of resolvedFiles) {
+    const { relativePath: relPath, source: text, matches: astMatches } = rf;
+    const lines = text.split("\n");
 
-      const astCoveredLines = new Set<number>();
-      const ext = path.extname(entry.relativePath);
-      if (getLanguageForExtension(ext)) {
-        try {
-          const astResult = await scanFileWithAst(entry.absolutePath, async (fp: string) => {
-            try {
-              return await access.readFile(fp);
-            } catch {
-              return null;
-            }
-          });
-          for (const match of astResult.matches) {
-            // Phase 1: skip stdlib, framework, and build-tool imports
-            if (match.packageName && STDLIB_DENYLIST.has(match.packageName)) continue;
+    const astCoveredLines = new Set<number>();
 
-            // Phase 2: require a registry match — drop silently if nothing is registered
-            const fp = (match.provider && match.methodChain)
-              ? lookupMethod(match.provider, match.methodChain)
-              : null;
-            const knownSdkProvider = match.provider ? isRegisteredProvider(match.provider) : false;
-            // http-kind: match.provider is set iff lookupHost() already resolved the host in ast-scanner
-            const knownHttpHost = match.kind === "http" && !!match.provider;
-            if (!fp && !knownSdkProvider && !knownHttpHost) continue;
+    // Process AST matches (already cross-file-resolved).
+    for (const match of astMatches) {
+      // Phase 1: skip stdlib, framework, and build-tool imports
+      if (match.packageName && STDLIB_DENYLIST.has(match.packageName)) continue;
 
-            const apiCall = astMatchToApiCallInput(match, entry.relativePath);
-            const key = `${entry.relativePath}:${match.line}:${apiCall.method}:${apiCall.url}`;
-            if (dedupe.has(key)) continue;
-            dedupe.add(key);
-            astCoveredLines.add(match.line);
-            allCalls.push(apiCall);
-          }
-        } catch {
-          // AST failed — fall through to regex-only for this file
-        }
-      }
+      // Phase 2: require a registry match — drop silently if nothing is registered
+      const fp = (match.provider && match.methodChain)
+        ? lookupMethod(match.provider, match.methodChain)
+        : null;
+      const knownSdkProvider = match.provider ? isRegisteredProvider(match.provider) : false;
+      // http-kind: match.provider is set iff lookupHost() already resolved the host in ast-scanner
+      const knownHttpHost = match.kind === "http" && !!match.provider;
+      if (!fp && !knownSdkProvider && !knownHttpHost) continue;
 
-      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const apiCall = astMatchToApiCallInput(match, relPath);
+      const key = `${relPath}:${match.line}:${apiCall.method}:${apiCall.url}`;
+      if (dedupe.has(key)) continue;
+      dedupe.add(key);
+      astCoveredLines.add(match.line);
+      allCalls.push(apiCall);
+    }
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
         const lineNum = lineIndex + 1;
         if (astCoveredLines.has(lineNum)) continue;
 
@@ -216,7 +279,7 @@ export async function scanFiles(
         const routeMatches = matchRouteDefinitionLine(line);
         for (const route of routeMatches) {
           if (!isHighConfidenceUrl(route.url)) continue;
-          const key = `${entry.relativePath}:${lineNum}:${route.method}:${route.url}:${route.library}`;
+          const key = `${relPath}:${lineNum}:${route.method}:${route.url}:${route.library}`;
           if (dedupe.has(key)) continue;
           dedupe.add(key);
           // span: regex matched a substring on this line; we can't recover the
@@ -229,7 +292,7 @@ export async function scanFiles(
             endColumn: line.length,
           };
           allCalls.push({
-            file: entry.relativePath,
+            file: relPath,
             line: lineNum,
             span,
             method: route.method,
@@ -297,7 +360,7 @@ export async function scanFiles(
           const reportedLineNum = reportedLineIndex + 1;
           const reportedLine = lines[reportedLineIndex] ?? line;
 
-          const key = `${entry.relativePath}:${reportedLineNum}:${match.method}:${match.url}:${match.library}`;
+          const key = `${relPath}:${reportedLineNum}:${match.method}:${match.url}:${match.library}`;
           if (dedupe.has(key)) continue;
           dedupe.add(key);
           // span: regex matched a substring on this line; we can't recover the
@@ -310,7 +373,7 @@ export async function scanFiles(
             endColumn: reportedLine.length,
           };
           allCalls.push({
-            file: entry.relativePath,
+            file: relPath,
             line: reportedLineNum,
             span,
             method: match.method,
@@ -319,83 +382,45 @@ export async function scanFiles(
             frequency: isInsideLoop(lines, reportedLineIndex) ? "per-request" : "daily",
           });
         }
-      }
-    } catch {
-      // Skip files that can't be read
     }
-
-    onProgress?.({
-      file: entry.relativePath,
-      fileIndex: i + 1,
-      fileTotal: files.length,
-    });
   }
 
   return allCalls;
 }
 
 export async function detectLocalWastePatternsInFiles(access: ScanFileAccess): Promise<LocalWasteFinding[]> {
-  const files = [...access.files].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-  const perFileResults: PerFileResult[] = [];
-  const nonAstFindings: LocalWasteFinding[] = [];
-
-  for (const entry of files) {
-    try {
-      const text = await access.readFile(entry.absolutePath);
-      const ext = path.extname(entry.relativePath);
-
-      if (getLanguageForExtension(ext)) {
-        try {
-          const result = await scanFileWithAst(entry.absolutePath, async (fp: string) => {
-            try {
-              return await access.readFile(fp);
-            } catch {
-              return null;
-            }
-          });
-          perFileResults.push({
-            filePath: entry.absolutePath,
-            relativePath: entry.relativePath,
-            source: text,
-            result,
-          });
-        } catch {
-          nonAstFindings.push(...detectLocalWasteFindingsInText(entry.relativePath, text));
-        }
-      } else {
-        nonAstFindings.push(...detectLocalWasteFindingsInText(entry.relativePath, text));
-      }
-    } catch {
-      // Skip files that can't be read
-    }
-  }
-
-  let augmented: Map<string, AstCallMatch[]>;
-  try {
-    augmented = runCrossFileResolution(perFileResults);
-  } catch {
-    augmented = new Map(perFileResults.map((pf) => [pf.relativePath, pf.result.matches]));
-  }
+  // Use the shared helper so cross-file resolution is applied in one place.
+  const resolvedFiles = await gatherResolvedAstMatches(access);
 
   const astFindings: LocalWasteFinding[] = [];
-  for (const pf of perFileResults) {
-    const ext = path.extname(pf.relativePath).toLowerCase();
-    const rawMatches = augmented.get(pf.relativePath) ?? pf.result.matches;
+  const nonAstFindings: LocalWasteFinding[] = [];
+
+  for (const rf of resolvedFiles) {
+    const ext = path.extname(rf.relativePath).toLowerCase();
+    // Files that had no AST coverage (empty matches from gatherResolvedAstMatches)
+    // get the regex-based text fallback.
+    const hasAstMatches = rf.matches.length > 0 || getLanguageForExtension(ext);
 
     if (JS_TS_EXTENSIONS.has(ext)) {
-      // Phase 1 gate only: remove stdlib, framework, and build-tool calls.
-      // Phase 2 (registry match) is intentionally NOT applied here — the waste
-      // detectors do code pattern analysis and do not require a known provider match.
-      const matches = rawMatches.filter((match) => {
-        if (match.packageName && STDLIB_DENYLIST.has(match.packageName)) return false;
-        return true;
-      });
+      if (hasAstMatches) {
+        // Phase 1 gate only: remove stdlib, framework, and build-tool calls.
+        // Phase 2 (registry match) is intentionally NOT applied here — the waste
+        // detectors do code pattern analysis and do not require a known provider match.
+        const matches = rf.matches.filter((match) => {
+          if (match.packageName && STDLIB_DENYLIST.has(match.packageName)) return false;
+          return true;
+        });
 
-      astFindings.push(...detectCacheWaste(matches, pf.source, pf.relativePath));
-      astFindings.push(...detectBatchWaste(matches, pf.source, pf.relativePath));
-      astFindings.push(...detectConcurrencyWaste(matches, pf.source, pf.relativePath));
+        astFindings.push(...detectCacheWaste(matches, rf.source, rf.relativePath));
+        astFindings.push(...detectBatchWaste(matches, rf.source, rf.relativePath));
+        astFindings.push(...detectConcurrencyWaste(matches, rf.source, rf.relativePath));
+      } else {
+        nonAstFindings.push(...detectLocalWasteFindingsInText(rf.relativePath, rf.source));
+      }
     } else if (PYTHON_EXTENSIONS.has(ext)) {
-      astFindings.push(...detectPythonWaste(rawMatches, pf.source, pf.relativePath));
+      astFindings.push(...detectPythonWaste(rf.matches, rf.source, rf.relativePath));
+    } else {
+      nonAstFindings.push(...detectLocalWasteFindingsInText(rf.relativePath, rf.source));
     }
   }
 
