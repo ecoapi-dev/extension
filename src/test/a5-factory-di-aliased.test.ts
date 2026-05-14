@@ -35,9 +35,26 @@ function buildFixtureAccess(fixtureDir: string): ScanFileAccess {
   const projectRoot = path.resolve(__dirname, "..", "..");
   const root = path.resolve(projectRoot, "src", "test", "fixtures", "a5");
 
-  // AGENT-A5.audit.bind-INSERT-HERE
-  // AGENT-A5.audit.factory-INSERT-HERE
-  // AGENT-A5.audit.di-INSERT-HERE
+  await run("A5.audit.bind: `.bind()`-aliased method ref resolves to openai", async () => {
+    const calls = await scanFiles(buildFixtureAccess(path.join(root, "bind-aliased")));
+    const consumerCalls = calls.filter((c) => c.file.endsWith("consumer.ts"));
+    const openaiCalls = consumerCalls.filter((c) => c.provider === "openai");
+    assert.ok(openaiCalls.length >= 1, `bind alias failed: got ${openaiCalls.length} calls`);
+  });
+
+  await run("A5.audit.factory: cross-file factory `makeClient()` return resolves to openai", async () => {
+    const calls = await scanFiles(buildFixtureAccess(path.join(root, "factory-direct")));
+    const consumerCalls = calls.filter((c) => c.file.endsWith("consumer.ts"));
+    const openaiCalls = consumerCalls.filter((c) => c.provider === "openai");
+    assert.ok(openaiCalls.length >= 1, `factory return failed: got ${openaiCalls.length} calls`);
+  });
+
+  await run("A5.audit.di: typed constructor param `private ai: OpenAI` resolves `this.ai.method()` to openai", async () => {
+    const calls = await scanFiles(buildFixtureAccess(path.join(root, "di-constructor")));
+    const consumerCalls = calls.filter((c) => c.file.endsWith("consumer.ts"));
+    const openaiCalls = consumerCalls.filter((c) => c.provider === "openai");
+    assert.ok(openaiCalls.length >= 1, `DI constructor failed: got ${openaiCalls.length} calls`);
+  });
 })().catch((err) => {
   console.error(err);
   process.exit(1);
