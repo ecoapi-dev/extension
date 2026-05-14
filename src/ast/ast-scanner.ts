@@ -442,20 +442,39 @@ function walkNode(root: SyntaxNode, fn: (node: SyntaxNode) => void): void {
   }
 }
 
+/** Node types that introduce a new function scope. */
+const FUNCTION_LIKE_TYPES = new Set([
+  "function_declaration",
+  "function_expression",
+  "arrow_function",
+  "method_definition",
+  "generator_function",
+  "generator_function_declaration",
+  "function",
+]);
+
 /**
  * Scan a function body node for `return new X()` statements.
  * Returns the resolved package for `X`, or null if not found.
  *
  * Handles both `{ return new X(); }` (statement body) and
  * `=> new X()` (expression body — the function node child is directly a new_expression).
+ *
+ * Does NOT descend into nested function/arrow/method bodies — only scans the
+ * direct body of `fnNode` itself, so nested helpers like `const h = () => new Y()`
+ * cannot shadow the outer factory's actual `return new X()`.
  */
 function detectFactoryReturnPackage(
   fnNode: SyntaxNode,
   varMap: Map<string, string>
 ): string | null {
   let found: string | null = null;
-  walkNode(fnNode, (n) => {
+
+  function walk(n: SyntaxNode, isRoot: boolean): void {
     if (found) return;
+    // Skip nested function bodies (but not the root fnNode itself)
+    if (!isRoot && FUNCTION_LIKE_TYPES.has(n.type)) return;
+
     // `return new X()` — return_statement whose first non-trivial child is new_expression
     if (n.type === "return_statement") {
       for (let i = 0; i < n.childCount; i++) {
@@ -471,14 +490,21 @@ function detectFactoryReturnPackage(
     }
     // Arrow function with expression body: `const f = () => new X()`
     // The new_expression is a direct child of the arrow_function node (not inside a block)
-    if (n.type === "new_expression" && n.parent?.type === "arrow_function") {
+    if (n.type === "new_expression" && n.parent?.type === "arrow_function" && n.parent === fnNode) {
       const ctor = n.child(1);
       if (ctor) {
         const pkg = CLASS_TO_PACKAGE[ctor.text] ?? varMap.get(ctor.text);
         if (pkg && !isInternalImport(pkg)) { found = pkg; return; }
       }
     }
-  });
+
+    for (let i = 0; i < n.childCount; i++) {
+      const c = n.child(i);
+      if (c) walk(c, false);
+    }
+  }
+
+  walk(fnNode, true);
   return found;
 }
 

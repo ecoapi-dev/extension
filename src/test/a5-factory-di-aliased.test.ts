@@ -87,6 +87,14 @@ function buildFixtureAccess(fixtureDir: string): ScanFileAccess {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+  await run("A5.regress.factory-nested: factory with nested helper functions still resolves to outer return type", async () => {
+    const calls = await scanFiles(buildFixtureAccess(path.join(root, "factory-nested")));
+    const consumerCalls = calls.filter((c) => c.file.endsWith("consumer.ts"));
+    const openaiCalls = consumerCalls.filter((c) => c.provider === "openai");
+    const anthropicCalls = consumerCalls.filter((c) => c.provider === "anthropic");
+    assert.ok(openaiCalls.length >= 1, `expected openai attribution from factory's outer return, got ${openaiCalls.length} openai + ${anthropicCalls.length} anthropic`);
+    assert.equal(anthropicCalls.length, 0, `nested helper's Anthropic must not pollute factory attribution; got ${anthropicCalls.length}`);
+  });
 })().catch((err) => {
   console.error(err);
   process.exit(1);
