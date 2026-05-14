@@ -164,6 +164,7 @@ interface ResolvedFileResult {
   relativePath: string;
   source: string;
   matches: AstCallMatch[];
+  astSucceeded: boolean;
 }
 
 /**
@@ -230,6 +231,7 @@ async function gatherResolvedAstMatches(
     relativePath: f.relativePath,
     source: f.source,
     matches: augmented.get(f.relativePath) ?? [],
+    astSucceeded: f.hasAst,
   }));
 }
 
@@ -397,29 +399,23 @@ export async function detectLocalWastePatternsInFiles(access: ScanFileAccess): P
 
   for (const rf of resolvedFiles) {
     const ext = path.extname(rf.relativePath).toLowerCase();
-    // Files that had no AST coverage (empty matches from gatherResolvedAstMatches)
-    // get the regex-based text fallback.
-    const hasAstMatches = rf.matches.length > 0 || getLanguageForExtension(ext);
 
-    if (JS_TS_EXTENSIONS.has(ext)) {
-      if (hasAstMatches) {
-        // Phase 1 gate only: remove stdlib, framework, and build-tool calls.
-        // Phase 2 (registry match) is intentionally NOT applied here — the waste
-        // detectors do code pattern analysis and do not require a known provider match.
-        const matches = rf.matches.filter((match) => {
-          if (match.packageName && STDLIB_DENYLIST.has(match.packageName)) return false;
-          return true;
-        });
+    if (rf.astSucceeded && JS_TS_EXTENSIONS.has(ext)) {
+      // Phase 1 gate only: remove stdlib, framework, and build-tool calls.
+      // Phase 2 (registry match) is intentionally NOT applied here — the waste
+      // detectors do code pattern analysis and do not require a known provider match.
+      const matches = rf.matches.filter((match) => {
+        if (match.packageName && STDLIB_DENYLIST.has(match.packageName)) return false;
+        return true;
+      });
 
-        astFindings.push(...detectCacheWaste(matches, rf.source, rf.relativePath));
-        astFindings.push(...detectBatchWaste(matches, rf.source, rf.relativePath));
-        astFindings.push(...detectConcurrencyWaste(matches, rf.source, rf.relativePath));
-      } else {
-        nonAstFindings.push(...detectLocalWasteFindingsInText(rf.relativePath, rf.source));
-      }
-    } else if (PYTHON_EXTENSIONS.has(ext)) {
+      astFindings.push(...detectCacheWaste(matches, rf.source, rf.relativePath));
+      astFindings.push(...detectBatchWaste(matches, rf.source, rf.relativePath));
+      astFindings.push(...detectConcurrencyWaste(matches, rf.source, rf.relativePath));
+    } else if (rf.astSucceeded && PYTHON_EXTENSIONS.has(ext)) {
       astFindings.push(...detectPythonWaste(rf.matches, rf.source, rf.relativePath));
     } else {
+      // AST failed (or non-AST extension) → regex text fallback
       nonAstFindings.push(...detectLocalWasteFindingsInText(rf.relativePath, rf.source));
     }
   }
