@@ -194,28 +194,33 @@ function detectSequential(
   filePath: string,
   isTestLike: boolean
 ): LocalWasteFinding[] {
-  // Group by provider — multiple single calls to the same provider in one file
-  // could be fired in parallel via Promise.all.
   const providerMatches = matches.filter(isRealProviderMatch);
-  const byProvider = new Map<string, AstCallMatch[]>();
+  const byBucket = new Map<string, { provider: string; matches: AstCallMatch[] }>();
   for (const m of providerMatches) {
     if (m.frequency !== "single" || m.loopContext) continue;
     if (!m.provider) continue;
-    const group = byProvider.get(m.provider) ?? [];
-    group.push(m);
-    byProvider.set(m.provider, group);
+    // Bucket by (provider, enclosingFunction): calls in different functions
+    // can't be batched together — they execute on independent code paths.
+    const fnKey = m.enclosingFunction ?? "<module>";
+    const key = `${m.provider}::${fnKey}`;
+    const bucket = byBucket.get(key) ?? { provider: m.provider, matches: [] };
+    bucket.matches.push(m);
+    byBucket.set(key, bucket);
   }
 
   const findings: LocalWasteFinding[] = [];
 
-  for (const [provider, group] of byProvider) {
+  for (const { provider, matches: group } of byBucket.values()) {
     if (group.length < 2) continue;
-    // Only flag if there's no concurrency limiter already in place.
+    // Dedupe by line — cross-file resolver expansion can produce multiple
+    // matches at the same call line for one user-written call.
+    const uniqueLines = new Set(group.map((m) => m.line));
+    if (uniqueLines.size < 2) continue;
     const firstMatch = group[0];
     if (hasGuardInWindow(source, firstMatch.line, CONCURRENCY_GUARD)) continue;
     if (hasGuardInWindow(source, firstMatch.line, BATCH_GUARD)) continue;
 
-    let score = 1 + Math.min(group.length - 1, 3); // more calls = higher urgency
+    let score = 1 + Math.min(uniqueLines.size - 1, 3);
     if (isTestLike) score -= 1;
     let confidence = 0.45 + Math.min(score, 5) * 0.06;
     if (isTestLike) confidence -= 0.10;
@@ -227,11 +232,11 @@ function detectSequential(
       type: "batch" as SuggestionType,
       severity: scoreToSeverity(score),
       confidence,
-      description: `${group.length} sequential ${provider} calls could be fired in parallel with Promise.all to reduce total latency.`,
+      description: `${uniqueLines.size} sequential ${provider} calls could be fired in parallel with Promise.all to reduce total latency.`,
       affectedFile: filePath,
       line: firstMatch.line,
       evidence: [
-        `${group.length} independent calls to "${provider}" detected in this file (lines ${group.map((m) => m.line).join(", ")}).`,
+        `${uniqueLines.size} independent calls to "${provider}" detected in this file (lines ${[...uniqueLines].sort((a,b)=>a-b).join(", ")}).`,
         "Wrapping independent awaits in Promise.all reduces wall-clock time proportional to the slowest call.",
       ],
     });

@@ -226,16 +226,20 @@ function detectLoopWaste(matches: ClassifiedMatch[], lines: string[], filePath: 
 
 function detectSequentialBatching(matches: ClassifiedMatch[], lines: string[], filePath: string): LocalWasteFinding[] {
   const findings: LocalWasteFinding[] = [];
-  const byProvider = new Map<string, ClassifiedMatch[]>();
+  const byBucket = new Map<string, { providerKey: string; matches: ClassifiedMatch[] }>();
 
   for (const classified of matches) {
     if (!NON_LOOP_FREQUENCIES.has(classified.match.frequency)) continue;
-    const group = byProvider.get(classified.providerKey) ?? [];
-    group.push(classified);
-    byProvider.set(classified.providerKey, group);
+    // Bucket by (providerKey, enclosingFunction): calls in different functions
+    // can't be batched together — they execute on independent code paths.
+    const fnKey = classified.match.enclosingFunction ?? "<module>";
+    const key = `${classified.providerKey}::${fnKey}`;
+    const bucket = byBucket.get(key) ?? { providerKey: classified.providerKey, matches: [] };
+    bucket.matches.push(classified);
+    byBucket.set(key, bucket);
   }
 
-  for (const [providerKey, group] of byProvider) {
+  for (const { providerKey, matches: group } of byBucket.values()) {
     const sorted = [...group].sort((a, b) => a.match.line - b.match.line);
     let start = 0;
 
