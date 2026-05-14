@@ -139,6 +139,9 @@ import { client } from "../lib/clients";  // ← scanner must reach openai.ts
 - `src/ast/cross-file-resolver.ts`
 - New fixtures under `src/test/fixtures/barrels/`
 
+### Status (2026-05-14)
+Implemented on branch `claude/a3-a5-resolver-recall`. Fixtures live under `src/test/fixtures/a3-a5/barrel-*`; behavioral coverage in `src/test/a3-barrel-reexports.test.ts`. Resolved shapes: direct (`export { x } from`), aliased (`export { x as y } from`), wildcard (`export * from`), nested barrels (2+ levels, depth-capped), and `export { default } from`. Missing-symbol re-exports fail gracefully (no throw). Perf: synthetic 1001-file barrel chain scanned in ~0.3s — well under the 30s ceiling.
+
 ---
 
 ## A4. AST ↔ regex parity audit
