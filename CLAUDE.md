@@ -195,6 +195,8 @@ The AST layer (`src/ast/`) uses web-tree-sitter (WASM) to parse JS/TS/Python sou
 
 There is no embedded HTTP server. All "local" data (sustainability footprint, cost-by-provider, simulator runs, scenario CRUD) is computed on the extension host and delivered to the webview through typed IPC messages defined in `src/messages.ts`. Scenarios are persisted via `vscode.globalState` under `eco.simulatorScenarios`.
 
+**SDK "local mode" (runtime telemetry) is not consumed by this extension.** The Node and Python middleware SDKs (`recost-dev/middleware-node`, `recost-dev/middleware-python`) ship a separate "local mode" transport that targets `ws://127.0.0.1:9847`. The extension does not host that server and intentionally will not — the IPC seam here is VS Code's webview-message channel, not localhost sockets. The SDKs are switching local-mode default to a file-based transport tracked in `recost-dev/middleware-node#37` and `recost-dev/middleware-python#38`; the extension is not a consumer of those files either.
+
 ### Auth / API Key System
 
 Two separate key systems coexist:
