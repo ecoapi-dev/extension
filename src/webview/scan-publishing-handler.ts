@@ -695,7 +695,7 @@ export class ScanPublishingHandler {
           .join(", ");
         this.ctx.postMessage({
           type: "scanNotification",
-          message: `Submitted ${remoteApiCalls.length} calls. ${unknownProviderCount} have unrecognized provider (top hosts — ${topHosts}). They are still submitted and will appear in the dashboard.`,
+          message: `Found ${unknownProviderCount} of ${remoteApiCalls.length} calls with no recognized provider (top hosts: ${topHosts}). They will be submitted with provider=unknown.`,
         });
       }
 
