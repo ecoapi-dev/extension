@@ -23,9 +23,9 @@ import type { Severity, SuggestionType } from "../../analysis/types";
 
 // ── Guard patterns (source text window ±8 lines) ─────────────────────────────
 
-/** Exponential backoff / retry pacing signals. */
+/** Exponential backoff / retry pacing primitives or known retry-wrapper invocations. */
 const BACKOFF_GUARD =
-  /\b(backoff|jitter|retryAfter|exponential|sleep\s*\(|delay\s*\(|retryDelay|retryAfterMs)\b/i;
+  /\b(?:backoff|jitter|retryAfter|exponential|retryDelay|retryAfterMs)\b|\b(?:sleep|delay|withRetry|with_retry|pRetry|asyncRetry|retryAsync|withBackoff|with_backoff)\s*\(/i;
 
 /** Concurrency limiters / throttles that protect fan-out. */
 const CONCURRENCY_GUARD =

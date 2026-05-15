@@ -204,7 +204,14 @@ function detectSequential(
   filePath: string,
   isTestLike: boolean
 ): LocalWasteFinding[] {
-  const providerMatches = matches.filter(isRealProviderMatch);
+  // Skip resolver-echoed matches: when cross-file resolution propagates a
+  // provider attribution onto a project-local wrapper call (e.g.
+  // `handleApi({path:"/x"})`), two such calls in the same function look like
+  // duplicate work but are semantically distinct operations dispatched
+  // through one wrapper. Direct SDK calls (`crossFile` falsy) keep firing.
+  const providerMatches = matches
+    .filter(isRealProviderMatch)
+    .filter((m) => !m.crossFile);
   const byBucket = new Map<string, { provider: string; matches: AstCallMatch[] }>();
   for (const m of providerMatches) {
     if (m.frequency !== "single" || m.loopContext) continue;
