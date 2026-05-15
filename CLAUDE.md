@@ -221,7 +221,7 @@ Two separate key systems coexist:
 - Suggestion savings are estimated using base multipliers by type (redundancy 0.35, n_plus_one 0.3, cache 0.2, batch 0.18, default 0.12) × severity multiplier (high 1.0, medium 0.75, low 0.5)
 - Suggestions can have `source: "local-rule"` (from local waste detection) or `source: "remote"` (from API)
 - `getAllEndpoints()` and `getAllSuggestions()` in `api-client.ts` accept an explicit `rcApiKey` parameter that is passed through to `apiFetch()` — the key is no longer implicitly read from a module-level variable at call time
-- Before submitting to the remote API, `webview-provider.ts` guards null/undefined `library` in `shouldSubmitRemote()`, fills missing `provider` via URL-based detection (`detectEndpointProvider`), and drops calls where provider is still `"unknown"`
+- Before submitting to the remote API, `scan-publishing-handler.ts` delegates to `build-remote-api-calls.ts:buildRemoteApiCalls()`. That helper applies `shouldSubmitRemote()` (in `scan-results.ts`), then resolves provider via `lookupHost()` on the normalized hostname. Calls where the provider is unresolved are **submitted** with the literal value `"unknown"` and the count is surfaced in a `scanNotification` IPC message at scan end — they are never silently dropped.
 
 ### Cost Simulator
 
