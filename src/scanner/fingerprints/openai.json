@@ -54,6 +54,7 @@
       "endpoint": "https://api.openai.com/v1/images/generations",
       "costModel": "per_request",
       "fixedFee": 0.04,
+      "batchCapable": true,
       "description": "Image generation (DALL-E 3 1024×1024 standard)"
     },
     {

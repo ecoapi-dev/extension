@@ -39,6 +39,13 @@ const BATCH_GUARD =
 const CONCURRENCY_GUARD =
   /\b(p-limit|bottleneck|semaphore|mutex|throttle|debounce|concurrency\s*:|limit\s*:|pool)\b/i;
 
+/**
+ * Bounded replication fan-out: `Array.from({ length: N })` creates a fixed-size array
+ * for parallel calls — the count is intentional (e.g. the API's own `n` param),
+ * not a naive map over arbitrary data. Not wasteful in the batch sense.
+ */
+const BOUNDED_REPLICATION = /Array\.from\s*\(\s*\{\s*length\s*:/;
+
 // ── File-path heuristics ──────────────────────────────────────────────────────
 
 const TEST_FILE = /(^|\/)(test|tests|spec|stories|storybook|fixtures?|examples?)\//i;
@@ -97,6 +104,9 @@ function detectBatch(
   if (!BATCH_LOOP_FREQS.has(match.frequency)) return null;
   if (!match.batchCapable) return null;
   if (hasGuardInWindow(source, match.line, BATCH_GUARD)) return null;
+  // Array.from({ length: N }) is intentional bounded replication (e.g. using the API's
+  // own n/count param) — not naive per-item fan-out; skip the batch suggestion.
+  if (match.frequency === "parallel" && hasGuardInWindow(source, match.line, BOUNDED_REPLICATION)) return null;
 
   const evidence: string[] = [
     `Call executes in a "${match.frequency}" context — each iteration makes a separate request.`,

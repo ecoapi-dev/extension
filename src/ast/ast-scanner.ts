@@ -78,11 +78,18 @@ export interface AstScanResult {
   /** Names of imported functions that were passed to middleware registrations
    *  and need cross-file resolution in Phase 3.5. */
   middlewareQueue: string[];
+  /**
+   * Factory return type map: exported function name → npm package.
+   * Populated when a function body contains `return new X()` where X resolves
+   * to a known provider package.  Consumed by the cross-file resolver to
+   * propagate `const client = makeClient()` → `client` → package.
+   */
+  factoryReturnMap: Map<string, string>;
 }
 
 // ── Package → Provider ID mapping ────────────────────────────────────────────
 
-const PACKAGE_TO_PROVIDER: Record<string, string> = {
+export const PACKAGE_TO_PROVIDER: Record<string, string> = {
   openai: "openai",
   anthropic: "anthropic",          // Python SDK: import anthropic
   "@anthropic-ai/sdk": "anthropic",
@@ -166,12 +173,47 @@ function extractHttpMethodFromOptions(args: SyntaxNode[]): string {
 
 // ── AST traversal helpers ─────────────────────────────────────────────────────
 
+/** Find the first child of `node` with the given type. */
+function childOfType(node: SyntaxNode, type: string): SyntaxNode | null {
+  for (let i = 0; i < node.childCount; i++) {
+    const c = node.child(i);
+    if (c && c.type === type) return c;
+  }
+  return null;
+}
+
+/**
+ * If `stmt` is an `export_statement`, return the first child that is a
+ * declaration node (lexical_declaration, function_declaration, class_declaration,
+ * variable_declaration).  Otherwise return `stmt` unchanged.
+ *
+ * This lets every top-level traversal loop handle `export const x = …`
+ * identically to `const x = …`.
+ */
+function unwrapExport(stmt: SyntaxNode): SyntaxNode {
+  if (stmt.type === "export_statement") {
+    for (let i = 0; i < stmt.namedChildCount; i++) {
+      const child = stmt.namedChild(i);
+      if (child && (
+        child.type === "lexical_declaration" ||
+        child.type === "function_declaration" ||
+        child.type === "class_declaration" ||
+        child.type === "variable_declaration"
+      )) {
+        return child;
+      }
+    }
+  }
+  return stmt;
+}
+
 /** Collect all top-level function names in the file. */
 function collectTopLevelFunctions(tree: Tree): Map<string, SyntaxNode> {
   const fns = new Map<string, SyntaxNode>();
   for (let i = 0; i < tree.rootNode.childCount; i++) {
-    const node = tree.rootNode.child(i);
-    if (!node) continue;
+    const raw = tree.rootNode.child(i);
+    if (!raw) continue;
+    const node = unwrapExport(raw);
     if (node.type === "function_declaration" || node.type === "function_definition") {
       // Scan all children to find the identifier — position varies for async functions
       // (async function foo() → child 0=async, 1=function, 2=identifier)
@@ -202,8 +244,9 @@ function collectTopLevelFunctions(tree: Tree): Map<string, SyntaxNode> {
 function collectClasses(tree: Tree): Map<string, SyntaxNode> {
   const classes = new Map<string, SyntaxNode>();
   for (let i = 0; i < tree.rootNode.childCount; i++) {
-    const node = tree.rootNode.child(i);
-    if (!node) continue;
+    const raw = tree.rootNode.child(i);
+    if (!raw) continue;
+    const node = unwrapExport(raw);
     if (node.type === "class_declaration" || node.type === "class_definition") {
       const name = node.child(1);
       // TypeScript grammar uses "type_identifier" for class names; JS uses "identifier"
@@ -256,6 +299,7 @@ function collectClassMethods(classNode: SyntaxNode): Map<string, SyntaxNode> {
  * - All imports + constructor assignments from resolveImports
  * - `this.field` → package resolution (from constructor body assignments)
  * - Local class instance tracking (var → class name)
+ * - In-file factory call tracking (const client = makeClient() where makeClient is in factoryReturnMap)
  *
  * Returns:
  * - `varMap`: variableName → packageName
@@ -264,7 +308,8 @@ function collectClassMethods(classNode: SyntaxNode): Map<string, SyntaxNode> {
  */
 function buildExtendedMaps(
   importMap: Map<string, string>,
-  tree: Tree
+  tree: Tree,
+  factoryReturnMap?: Map<string, string>
 ): {
   varMap: Map<string, string>;
   thisFieldMap: Map<string, string>;
@@ -276,8 +321,9 @@ function buildExtendedMaps(
 
   // Walk top-level for instance assignments and this.field assignments
   for (let i = 0; i < tree.rootNode.childCount; i++) {
-    const node = tree.rootNode.child(i);
-    if (!node) continue;
+    const raw = tree.rootNode.child(i);
+    if (!raw) continue;
+    const node = unwrapExport(raw);
 
     if (node.type === "lexical_declaration" || node.type === "variable_declaration") {
       for (let j = 0; j < node.childCount; j++) {
@@ -289,6 +335,15 @@ function buildExtendedMaps(
         if (lhs.type === "identifier" && rhs.type === "new_expression") {
           const ctor = rhs.child(1);
           if (ctor) instanceMap.set(lhs.text, ctor.text);
+        }
+        // In-file factory call: `const client = makeClient()` where makeClient is
+        // a known factory function defined in this file.
+        if (lhs.type === "identifier" && rhs.type === "call_expression" && factoryReturnMap) {
+          const callee = rhs.child(0);
+          if (callee?.type === "identifier") {
+            const pkg = factoryReturnMap.get(callee.text);
+            if (pkg) varMap.set(lhs.text, pkg);
+          }
         }
       }
     }
@@ -312,11 +367,49 @@ function buildExtendedMaps(
   }
 
   // Scan constructor bodies to find this.field = new Pkg() assignments
+  // AND typed constructor params (private readonly ai: OpenAI) → thisFieldMap
   const classes = collectClasses(tree);
   for (const [, classNode] of classes) {
     const methods = collectClassMethods(classNode);
     const constructor = methods.get("constructor");
     if (!constructor) continue;
+
+    // ── Typed constructor params (TS shorthand fields) ─────────────────────
+    // `constructor(private readonly ai: OpenAI)` → thisFieldMap["ai"] = "openai"
+    // The required_parameter has an accessibility_modifier child when it declares
+    // a class field (private/public/protected).  Walk the formal_parameters.
+    const formalParams = childOfType(constructor, "formal_parameters");
+    if (formalParams) {
+      for (let pi = 0; pi < formalParams.childCount; pi++) {
+        const param = formalParams.child(pi);
+        if (!param) continue;
+        if (param.type !== "required_parameter" && param.type !== "optional_parameter") continue;
+
+        // Only process params that have an accessibility modifier (making them class fields)
+        let hasAccessibilityModifier = false;
+        let nameNode: SyntaxNode | null = null;
+        let typeAnnotation: SyntaxNode | null = null;
+
+        for (let ci = 0; ci < param.childCount; ci++) {
+          const c = param.child(ci);
+          if (!c) continue;
+          if (c.type === "accessibility_modifier") hasAccessibilityModifier = true;
+          else if (c.type === "identifier") nameNode = c;
+          else if (c.type === "type_annotation") typeAnnotation = c;
+        }
+
+        if (!hasAccessibilityModifier || !nameNode || !typeAnnotation) continue;
+
+        // type_annotation is `: TypeName` — the type identifier is at child(1)
+        const typeIdent = typeAnnotation.child(1);
+        if (!typeIdent) continue;
+
+        const typeName = typeIdent.text;
+        const pkg = CLASS_TO_PACKAGE[typeName] ?? varMap.get(typeName);
+        if (pkg) thisFieldMap.set(nameNode.text, pkg);
+      }
+    }
+
     // Walk constructor body for `this.field = new ClassName()` assignments
     walkNode(constructor, (n) => {
       if (n.type !== "assignment_expression") return;
@@ -347,6 +440,72 @@ function walkNode(root: SyntaxNode, fn: (node: SyntaxNode) => void): void {
     const c = root.child(i);
     if (c) walkNode(c, fn);
   }
+}
+
+/** Node types that introduce a new function scope. */
+const FUNCTION_LIKE_TYPES = new Set([
+  "function_declaration",
+  "function_expression",
+  "arrow_function",
+  "method_definition",
+  "generator_function",
+  "generator_function_declaration",
+  "function",
+]);
+
+/**
+ * Scan a function body node for `return new X()` statements.
+ * Returns the resolved package for `X`, or null if not found.
+ *
+ * Handles both `{ return new X(); }` (statement body) and
+ * `=> new X()` (expression body — the function node child is directly a new_expression).
+ *
+ * Does NOT descend into nested function/arrow/method bodies — only scans the
+ * direct body of `fnNode` itself, so nested helpers like `const h = () => new Y()`
+ * cannot shadow the outer factory's actual `return new X()`.
+ */
+function detectFactoryReturnPackage(
+  fnNode: SyntaxNode,
+  varMap: Map<string, string>
+): string | null {
+  let found: string | null = null;
+
+  function walk(n: SyntaxNode, isRoot: boolean): void {
+    if (found) return;
+    // Skip nested function bodies (but not the root fnNode itself)
+    if (!isRoot && FUNCTION_LIKE_TYPES.has(n.type)) return;
+
+    // `return new X()` — return_statement whose first non-trivial child is new_expression
+    if (n.type === "return_statement") {
+      for (let i = 0; i < n.childCount; i++) {
+        const c = n.child(i);
+        if (c && c.type === "new_expression") {
+          const ctor = c.child(1);
+          if (ctor) {
+            const pkg = CLASS_TO_PACKAGE[ctor.text] ?? varMap.get(ctor.text);
+            if (pkg && !isInternalImport(pkg)) { found = pkg; return; }
+          }
+        }
+      }
+    }
+    // Arrow function with expression body: `const f = () => new X()`
+    // The new_expression is a direct child of the arrow_function node (not inside a block)
+    if (n.type === "new_expression" && n.parent?.type === "arrow_function" && n.parent === fnNode) {
+      const ctor = n.child(1);
+      if (ctor) {
+        const pkg = CLASS_TO_PACKAGE[ctor.text] ?? varMap.get(ctor.text);
+        if (pkg && !isInternalImport(pkg)) { found = pkg; return; }
+      }
+    }
+
+    for (let i = 0; i < n.childCount; i++) {
+      const c = n.child(i);
+      if (c) walk(c, false);
+    }
+  }
+
+  walk(fnNode, true);
+  return found;
 }
 
 // ── Provider resolution ───────────────────────────────────────────────────────
@@ -435,16 +594,32 @@ export async function scanSourceWithAst(
   const matches: AstCallMatch[] = [];
   const classRegistry = new Map<string, ClassInfo>();
   const middlewareQueue: string[] = [];
+  const factoryReturnMap = new Map<string, string>();
 
   // ── 1. Parse ────────────────────────────────────────────────────────────────
   const tree = await parseFile(source, language);
-  if (!tree) return { matches, classRegistry, middlewareQueue };
+  if (!tree) return { matches, classRegistry, middlewareQueue, factoryReturnMap };
 
   // ── 2. Resolve imports ──────────────────────────────────────────────────────
   const { importMap, parameterMaps } = await resolveImports(tree, filePath, readFileFn);
 
+  // ── 3a. Build preliminary varMap (needed for factory detection) ──────────────
+  // We need varMap before building factoryReturnMap so that factory bodies can
+  // resolve constructor class names that are imported (e.g. `new OpenAI()` where
+  // `OpenAI` is in importMap).
+  const prelimVarMap = new Map(importMap);
+
+  // ── 3b. Detect factory return types in this file's function bodies ───────────
+  {
+    const topFns = collectTopLevelFunctions(tree);
+    for (const [fnName, fnNode] of topFns) {
+      const pkg = detectFactoryReturnPackage(fnNode, prelimVarMap);
+      if (pkg) factoryReturnMap.set(fnName, pkg);
+    }
+  }
+
   // ── 3. Build extended maps (this.field, instance→class, etc.) ───────────────
-  const { varMap, thisFieldMap, instanceMap } = buildExtendedMaps(importMap, tree);
+  const { varMap, thisFieldMap, instanceMap } = buildExtendedMaps(importMap, tree, factoryReturnMap);
 
   // ── 4. Collect all call expressions ─────────────────────────────────────────
   const allCalls = extractCalls(tree);
@@ -737,7 +912,7 @@ export async function scanSourceWithAst(
     }
   }
 
-  return { matches, classRegistry, middlewareQueue };
+  return { matches, classRegistry, middlewareQueue, factoryReturnMap };
 }
 
 /**
@@ -751,11 +926,11 @@ export async function scanFileWithAst(
   readFileFn: FileReader
 ): Promise<AstScanResult> {
   const source = await readFileFn(filePath);
-  if (source === null) return { matches: [], classRegistry: new Map(), middlewareQueue: [] };
+  if (source === null) return { matches: [], classRegistry: new Map(), middlewareQueue: [], factoryReturnMap: new Map() };
 
   const ext = path.extname(filePath);
   const language = getLanguageForExtension(ext);
-  if (!language) return { matches: [], classRegistry: new Map(), middlewareQueue: [] };
+  if (!language) return { matches: [], classRegistry: new Map(), middlewareQueue: [], factoryReturnMap: new Map() };
 
   return scanSourceWithAst(source, language, filePath, readFileFn);
 }

@@ -276,8 +276,10 @@ function processFunctionParams(
 // ── Barrel file / re-export handling ─────────────────────────────────────────
 
 interface ExportEntry {
-  /** Exported name (or null for `export *`) */
+  /** Exported name (or null for `export *`) — the name that consumers import */
   exportedName: string | null;
+  /** Original name in the source file (differs from exportedName when aliased) */
+  originalName?: string;
   /** Relative source path (the `from "..."` string) */
   sourcePath: string;
 }
@@ -299,8 +301,16 @@ function collectExports(tree: Tree): ExportEntry[] {
       for (let j = 0; j < exportClause.childCount; j++) {
         const spec = exportClause.child(j);
         if (!spec || spec.type !== "export_specifier") continue;
-        const ident = spec.child(0); // original name
-        if (ident) entries.push({ exportedName: ident.text, sourcePath });
+        // Tree-sitter export_specifier fields:
+        //   name: the original identifier (what the source file calls it)
+        //   alias: the exported name (what consumers import), present only if `as Y` is used
+        const nameNode = spec.childForFieldName("name") ?? spec.child(0);
+        const aliasNode = spec.childForFieldName("alias");
+        const originalName = nameNode?.text;
+        const exportedName = aliasNode?.text ?? originalName;
+        if (exportedName) {
+          entries.push({ exportedName, originalName, sourcePath });
+        }
       }
     } else {
       // export * from "./providers"
@@ -349,38 +359,50 @@ async function resolveBarrelImport(
   const barrelExports = collectExports(barrelTree);
 
   for (const name of importedNames) {
-    // Find a matching export in the barrel
+    // Find a matching export in the barrel.
+    // A barrel may have multiple entries that could match — e.g. a wildcard
+    // (`export * from "./a"`) followed by a named re-export
+    // (`export { ask } from "./b"`).  We must keep iterating if the current
+    // entry doesn't actually provide the name we need.
     for (const entry of barrelExports) {
-      if (entry.exportedName === name || entry.exportedName === null) {
-        // This barrel re-exports `name` from `entry.sourcePath` — resolve it
-        if (!entry.sourcePath.startsWith(".")) {
-          // Re-exported from an npm package — this IS the package
-          result.set(name, entry.sourcePath);
-        } else {
-          // One more level: read the source file and look for the actual export
-          const srcDir = path.posix.dirname(resolvedBarrelPath);
-          const srcPath = joinPath(srcDir, entry.sourcePath);
-          const srcCandidates = srcPath.endsWith(".ts") || srcPath.endsWith(".js")
-            ? [srcPath]
-            : [srcPath + ".ts", srcPath + ".js"];
+      if (entry.exportedName !== name && entry.exportedName !== null) continue;
 
-          for (const candidate of srcCandidates) {
-            const content = await readFile(candidate);
-            if (content === null) continue;
-            const tree = await parseTreeFn(content);
-            if (!tree) continue;
+      // This barrel re-exports `name` from `entry.sourcePath` — resolve it
+      if (!entry.sourcePath.startsWith(".")) {
+        // Re-exported from an npm package — this IS the package
+        result.set(name, entry.sourcePath);
+      } else {
+        // One more level: read the source file and look for the actual export
+        const srcDir = path.posix.dirname(resolvedBarrelPath);
+        const srcPath = joinPath(srcDir, entry.sourcePath);
+        const srcCandidates = srcPath.endsWith(".ts") || srcPath.endsWith(".js")
+          ? [srcPath]
+          : [srcPath + ".ts", srcPath + ".js"];
 
-            // Look for the npm package this file imports `name` from
-            const { importMap: fileImports } = await resolveImportsCore(tree, candidate, undefined, parseTreeFn);
-            const pkg = fileImports.get(name);
-            if (pkg) {
-              result.set(name, pkg);
-              break;
-            }
+        for (const candidate of srcCandidates) {
+          const content = await readFile(candidate);
+          if (content === null) continue;
+          const tree = await parseTreeFn(content);
+          if (!tree) continue;
+
+          // Look for the npm package this file imports `name` from.
+          // When the barrel used an alias (`export { _internalAsk as ask }`),
+          // the source file knows the function by its originalName, not the
+          // consumer-visible alias — so prefer originalName for the lookup.
+          const lookupName = entry.originalName ?? name;
+          const { importMap: fileImports } = await resolveImportsCore(tree, candidate, undefined, parseTreeFn);
+          const pkg = fileImports.get(lookupName) ?? (lookupName !== name ? fileImports.get(name) : undefined);
+          if (pkg) {
+            result.set(name, pkg);
+            break;
           }
         }
-        break; // found export entry for this name
       }
+
+      // Only stop searching barrel entries once the lookup actually succeeded.
+      // If a wildcard entry didn't provide the name (source file didn't export
+      // it), continue to the next barrel entry which may be a named re-export.
+      if (result.has(name)) break;
     }
   }
 
@@ -601,6 +623,26 @@ async function resolveImportsCore(
 
       case "function_declaration": {
         processFunctionParams(stmt, importMap, parameterMaps);
+        break;
+      }
+
+      case "export_statement": {
+        // `export const x = new Sdk()` / `export function f() {}` / `export class C {}`
+        // Unwrap the inner declaration and re-process it.
+        for (let j = 0; j < stmt.namedChildCount; j++) {
+          const inner = stmt.namedChild(j);
+          if (!inner) continue;
+          if (inner.type === "lexical_declaration" || inner.type === "variable_declaration") {
+            for (let k = 0; k < inner.childCount; k++) {
+              const child = inner.child(k);
+              if (child && child.type === "variable_declarator") {
+                processVariableDeclarator(child, importMap);
+              }
+            }
+          } else if (inner.type === "function_declaration") {
+            processFunctionParams(inner, importMap, parameterMaps);
+          }
+        }
         break;
       }
     }

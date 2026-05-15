@@ -46,6 +46,7 @@ function makeResult(overrides: Partial<AstScanResult> = {}): AstScanResult {
     matches: [],
     classRegistry: new Map(),
     middlewareQueue: [],
+    factoryReturnMap: new Map(),
     ...overrides,
   };
 }

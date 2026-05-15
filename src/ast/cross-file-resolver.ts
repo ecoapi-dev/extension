@@ -16,6 +16,7 @@
  */
 import * as path from "path";
 import type { AstCallMatch, AstScanResult } from "./ast-scanner";
+import { PACKAGE_TO_PROVIDER } from "./ast-scanner";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ function findExportedFunctions(source: string): FunctionRange[] {
 
   const EXPORT_FN = /^export\s+(async\s+)?function\s+(\w+)/;
   const EXPORT_CONST = /^export\s+const\s+(\w+)(?:\s*:\s*[^=]+)?\s*=\s*(async\s+)?\(/;
+  const EXPORT_DEFAULT_FN = /^export\s+default\s+(async\s+)?function(?:\s+(\w+))?/;
 
   // Track brace depth to approximate end of each function body.
   // Simple approach: find the opening { after the declaration, count braces.
@@ -143,6 +145,17 @@ function findExportedFunctions(source: string): FunctionRange[] {
     const constMatch = EXPORT_CONST.exec(line);
     if (constMatch) {
       ranges.push({ name: constMatch[1], startLine: i + 1, endLine: findEndLine(i) });
+      continue;
+    }
+    // export default function ask(...) — register under both "default" sentinel and
+    // the function's actual name (if present) so both lookup paths work.
+    const defaultFnMatch = EXPORT_DEFAULT_FN.exec(line);
+    if (defaultFnMatch) {
+      const endLine = findEndLine(i);
+      ranges.push({ name: "default", startLine: i + 1, endLine });
+      if (defaultFnMatch[2]) {
+        ranges.push({ name: defaultFnMatch[2], startLine: i + 1, endLine });
+      }
     }
   }
 
@@ -210,15 +223,21 @@ function extractRelativeImports(source: string): ImportedName[] {
 // ── Re-export detection ───────────────────────────────────────────────────────
 
 interface ReExport {
-  exportedName: string;
+  /** Exported name (or null for `export *` wildcard re-exports). */
+  exportedName: string | null;
+  /** Original name in the source file (differs from exportedName when aliased). */
+  originalName: string | null;
   specifier: string;
 }
 
 /**
- * Detect `export { foo } from './other'` and `export { foo as bar } from './other'` patterns.
+ * Detect `export { foo } from './other'`, `export { foo as bar } from './other'`,
+ * and `export * from './other'` patterns.
  */
 function extractReExports(source: string): ReExport[] {
   const results: ReExport[] = [];
+
+  // Named re-exports: export { foo, bar as baz } from './other'
   const RE_EXPORT = /^export\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/gm;
   let m: RegExpExecArray | null;
   while ((m = RE_EXPORT.exec(source)) !== null) {
@@ -231,13 +250,24 @@ function extractReExports(source: string): ReExport[] {
       const asMatch = /(\w+)\s+as\s+(\w+)/.exec(trimmed);
       if (asMatch) {
         // export { foo as bar } from './other' → exported as "bar", original is "foo"
-        results.push({ exportedName: asMatch[2], specifier });
+        results.push({ exportedName: asMatch[2], originalName: asMatch[1], specifier });
       } else {
         const name = trimmed.match(/\w+/)?.[0];
-        if (name) results.push({ exportedName: name, specifier });
+        if (name) results.push({ exportedName: name, originalName: name, specifier });
       }
     }
   }
+
+  // Wildcard re-exports: export * from './other'
+  const WILDCARD_RE_EXPORT = /^export\s+\*\s+from\s+['"]([^'"]+)['"]/gm;
+  let wm: RegExpExecArray | null;
+  while ((wm = WILDCARD_RE_EXPORT.exec(source)) !== null) {
+    const specifier = wm[1];
+    if (!specifier.startsWith(".") && !specifier.startsWith("/")) continue;
+    // null exportedName means "any symbol from this source"
+    results.push({ exportedName: null, originalName: null, specifier });
+  }
+
   return results;
 }
 
@@ -353,10 +383,24 @@ function resolveExportedMatches(
 
   const reExports = extractReExports(source);
   for (const re of reExports) {
-    if (re.exportedName !== name) continue;
+    // Wildcard re-export (`export * from './other'`) — any name passes through.
+    // Named re-export — only proceed if exportedName matches the requested name.
+    // Also allow `export { default } from './other'` to match any default import:
+    // when a consumer does `import ask from './barrel'`, the barrel may re-export
+    // the default slot explicitly via `export { default } from './api'`. In that
+    // case the requested name is the local alias ("ask"), not "default", so we
+    // need to follow the default re-export and look up "default" in the source.
+    if (re.exportedName !== null && re.exportedName !== name && re.exportedName !== "default") continue;
     const resolved = resolveImportPath(fromFile, re.specifier, knownFiles);
     if (!resolved) continue;
-    const found = resolveExportedMatches(name, resolved, registry, sourceByFile, knownFiles, depth + 1, visited);
+    // When the barrel aliases (`export { _internalAsk as ask }`), the source file
+    // knows the symbol by its originalName — recurse with that name so the export
+    // registry lookup finds the actual function.
+    // For wildcards, the name passes through unchanged (originalName is null).
+    // For `export { default }`, recurse with "default" so the registry finds the
+    // `export default function` entry in the source file.
+    const lookupName = re.exportedName === "default" ? "default" : (re.originalName ?? name);
+    const found = resolveExportedMatches(lookupName, resolved, registry, sourceByFile, knownFiles, depth + 1, visited);
     if (found) return found;
   }
 
@@ -599,7 +643,139 @@ export function runCrossFileResolution(
     }
   }
 
+  // ── Factory return post-pass ───────────────────────────────────────────────
+  //
+  // Handles `const client = makeClient()` where `makeClient` is imported from
+  // another file and that file's factory function returns `new OpenAI()`.
+  //
+  // Algorithm:
+  //  1. Build global factory registry: absoluteFilePath → (exportedFnName → package)
+  //     from each file's AstScanResult.factoryReturnMap.
+  //  2. For each consumer file, scan its relative imports for factory functions.
+  //  3. Find `const varName = factoryFn()` patterns in consumer source.
+  //  4. Find call expressions that use varName (e.g. varName.chat.completions.create)
+  //     that aren't already attributed to a provider.
+  //  5. Emit synthetic AstCallMatches attributed to the factory's returned package.
+  runFactoryReturnPostPass(files, normalizedKnown, output, seenKeysByFile);
+
   return output;
+}
+
+// ── Factory return post-pass helpers ──────────────────────────────────────────
+
+/**
+ * Parse `const varName = factoryFn()` patterns from source text.
+ * Returns a map from varName → factoryFn (the callee name).
+ */
+function extractFactoryCallAssignments(source: string): Map<string, string> {
+  const result = new Map<string, string>();
+  // const/let/var varName = factoryFnName()
+  // Also handles: const varName = factoryFnName<T>()
+  const RE = /(?:const|let|var)\s+(\w+)\s*=\s*(\w+)\s*(?:<[^>]*>)?\s*\(\s*\)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = RE.exec(source)) !== null) {
+    result.set(m[1], m[2]);
+  }
+  return result;
+}
+
+/**
+ * Find all `varName.a.b.c(...)` call chains in source text.
+ * Returns { methodChain, line } entries (1-based line numbers).
+ */
+function extractVarMethodCalls(source: string, varName: string): Array<{ methodChain: string; line: number }> {
+  const results: Array<{ methodChain: string; line: number }> = [];
+  const lines = source.split("\n");
+  // Match: varName.something.something...(  — at least one dot required
+  // Build the regex once; matchAll() returns a fresh iterator per call so
+  // there are no lastIndex state issues between lines.
+  const re = new RegExp(`\\b(${escapeRegex(varName)}(?:\\.[\\w]+)+)\\s*\\(`, "g");
+  for (let i = 0; i < lines.length; i++) {
+    for (const m of lines[i].matchAll(re)) {
+      results.push({ methodChain: m[1], line: i + 1 });
+    }
+  }
+  return results;
+}
+
+
+function runFactoryReturnPostPass(
+  files: PerFileResult[],
+  normalizedKnown: Set<string>,
+  output: Map<string, AstCallMatch[]>,
+  seenKeysByFile: Map<string, Set<string>>
+): void {
+  // Step 1: Build global factory registry
+  // globalFactoryRegistry: normalizedFilePath → (fnName → package)
+  const globalFactoryRegistry = new Map<string, Map<string, string>>();
+  for (const f of files) {
+    const frm = f.result.factoryReturnMap;
+    if (frm && frm.size > 0) {
+      globalFactoryRegistry.set(normalizePath(f.filePath), frm);
+    }
+  }
+  if (globalFactoryRegistry.size === 0) return;
+
+  // Step 2: For each consumer file, check imports against the factory registry
+  for (const consumer of files) {
+    const consumerPath = normalizePath(consumer.filePath);
+    const imports = extractRelativeImports(consumer.source);
+
+    const seen = seenKeysByFile.get(consumer.relativePath)!;
+    const matches = output.get(consumer.relativePath)!;
+
+    // Step 3: Find `const varName = localName()` in consumer source — hoisted
+    // out of the per-import loop so we only parse the source once per consumer.
+    const factoryAssignments = extractFactoryCallAssignments(consumer.source);
+    if (factoryAssignments.size === 0) continue;
+
+    for (const { localName, specifier } of imports) {
+      const resolvedFile = resolveImportPath(consumerPath, specifier, normalizedKnown);
+      if (!resolvedFile) continue;
+
+      const fileFactories = globalFactoryRegistry.get(resolvedFile);
+      if (!fileFactories) continue;
+
+      const pkg = fileFactories.get(localName);
+      if (!pkg) continue;
+
+      const provider = PACKAGE_TO_PROVIDER[pkg] ?? pkg;
+
+      // Find all var names assigned from this factory function
+      for (const [varName, callee] of factoryAssignments) {
+        if (callee !== localName) continue;
+
+        // Step 4: Find method calls on varName in consumer source
+        const calls = extractVarMethodCalls(consumer.source, varName);
+        for (const { methodChain, line } of calls) {
+          // Strip varName prefix: "client.chat.completions.create" → "chat.completions.create"
+          const dot = methodChain.indexOf(".");
+          const resolvedChain = dot !== -1 ? methodChain.slice(dot + 1) : "";
+          if (!resolvedChain) continue;
+
+          const key = `${provider}:${resolvedChain}:${line}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          matches.push({
+            kind: "sdk",
+            provider,
+            packageName: pkg,
+            methodChain,
+            confidence: 0.9,
+            line,
+            column: 0,
+            span: { startLine: line, startColumn: 0, endLine: line, endColumn: 0 },
+            frequency: "single",
+            loopContext: false,
+            enclosingFunction: null,
+            crossFile: true,
+            sourceFile: resolvedFile,
+          });
+        }
+      }
+    }
+  }
 }
 
 // ── Source text helpers ───────────────────────────────────────────────────────

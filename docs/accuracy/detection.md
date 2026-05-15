@@ -139,6 +139,9 @@ import { client } from "../lib/clients";  // ← scanner must reach openai.ts
 - `src/ast/cross-file-resolver.ts`
 - New fixtures under `src/test/fixtures/barrels/`
 
+### Status (2026-05-14)
+Implemented on branch `claude/a3-a5-resolver-recall`. Fixtures live under `src/test/fixtures/a3-a5/barrel-*`; behavioral coverage in `src/test/a3-barrel-reexports.test.ts`. Resolved shapes: direct (`export { x } from`), aliased (`export { x as y } from`), wildcard (`export * from`), nested barrels (2+ levels, depth-capped), and `export { default } from`. Missing-symbol re-exports fail gracefully (no throw). Perf: synthetic 1001-file barrel chain scanned in ~0.3s — well under the 30s ceiling.
+
 ---
 
 ## A4. AST ↔ regex parity audit
@@ -216,6 +219,14 @@ The first pattern (`.bind`) is almost certainly missed today. The factory patter
 - [ ] All three patterns above produce detections with correct provider/method.
 - [ ] No regression on simple `const ai = new OpenAI()` cases.
 - [ ] Each new tracked pattern has a fixture + test.
+
+### Status (2026-05-14)
+Implemented on branch `claude/a3-a5-resolver-recall`. Fixtures under `src/test/fixtures/a5/`; coverage in `src/test/a5-factory-di-aliased.test.ts`. Landed:
+- `.bind()`-aliased method refs — already resolved by the existing scanner (audit confirms the member-access inside `.bind()` is detected).
+- Factory return inference — `function makeClient(): X { return new X(); }` plus `const c = makeClient()` is tracked both in-file (per-file `factoryReturnMap` populates `varMap`) and cross-file (post-fixpoint pass synthesises matches for callers in other files).
+- DI typed constructor params — `constructor(private readonly ai: OpenAI)` now populates a `thisFieldMap` so `this.ai.<chain>` resolves to the param's declared SDK type.
+- Regression test confirms simple `const c = new X()` still resolves.
+- Benchmark gate: detection recall +2.94pp, detection precision −0.91pp (within 1pp tolerance); finding precision/recall unchanged.
 
 ### Files
 - `src/ast/import-resolver.ts`
