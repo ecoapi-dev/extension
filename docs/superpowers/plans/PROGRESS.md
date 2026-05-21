@@ -1,6 +1,8 @@
-# Foundation Roadmap — Progress Tracker
+# Extension — Progress Tracker
 
-Tracks execution of the three foundation plans for the parser-accuracy roadmap (issues #80, #82, #76). Order per `docs/accuracy/README.md`: B1 → B3 → A4 → D1 (D1 is a separate later plan).
+Two trackers in one file:
+1. **Foundation Roadmap** — original parser-accuracy plans (B1, B3, A4, D1). Historical; all complete.
+2. **Wave Roadmap** — the 10-wave structure that organizes all remaining open work (post-foundation). This is the active tracker for new sessions.
 
 **Update protocol:** check the box (`- [x]`) when a task is **merged into the working branch and reviewed (spec + code quality)**. Update the **Status** column of the batch table when every task in that batch is checked. Append a one-line entry to the **Activity Log** at the bottom for each batch transition or notable decision.
 
@@ -122,10 +124,112 @@ Tracks execution of the three foundation plans for the parser-accuracy roadmap (
 - **B3 ships before A4** because stable IDs make the parity test's same-call-different-line assertions meaningful in the future.
 - **D1 (benchmark corpus) is the next plan after these three.** Track separately when written.
 
+---
+
+# Wave Roadmap — Progress Tracker
+
+Post-foundation work organized into 10 waves + 2 standalones, tracked via `wave/*` + `area/*` GitHub labels. **Execution order is severity-weighted** (platform issues outrank accuracy): Wave 9 → 6 → 7 → 8 → 10 → standalones → accuracy waves (5 → 3 → 1 → 2 → 4).
+
+## Overall Wave Status
+
+| Wave | Topic | Issues | Status | Notes |
+|---|---|---|---|---|
+| **9** | Local-mode IPC architecture | #91, #99 | 🟢 | Closed docs-only via PR #120. Decision: extension does not host WS server; SDKs move to NDJSON file transport. |
+| **6** | Scan submission fidelity | #95, #96 | 🟢 | Both halves shipped: `recost-dev/api#40` (span persistence) + `extension#121` (unknown-provider retention). |
+| **7** | Cost/simulator consistency | #92, #93 | 🟡 | PR [#122](https://github.com/recost-dev/extension/pull/122) OPEN. Labels extension numbers as estimates; doesn't reconcile constants. Worktree `../extension-wave7`. |
+| **8** | Status/error UX | #46, #94, #100 | ⬜ | Next up per severity-weighted order. #94 is HIGH (validateRcApiKey 404 treated as valid). |
+| **10** | Config hygiene | #97, #98 | ⬜ | Low/Medium severity. |
+| — | Standalone #45 | #45 | ⬜ | Opt-in Project ID persistence — independent feature. |
+| — | Standalone #52 | #52 | ⬜ | Dashboard theming — can defer indefinitely. |
+| **5** | Housekeeping (accuracy) | #118, #119 | ⬜ | Cheapest accuracy work. |
+| **3** | Resolver follow-ups (accuracy) | #114, #115, #116 | ⬜ | Low-risk recall wins. |
+| **1** | Findings quality (accuracy) | #84, #85, #112 | ⬜ | User-facing. |
+| **2** | Traceability (accuracy) | #81, #113 | ⬜ | Corpus expansion + dual locations. |
+| **4** | Recall recovery (accuracy) | #117 | ⬜ | Risky — depends on Wave 3 (#116). |
+
+## Wave 9 — Local-mode IPC architecture (CLOSED)
+
+| Issue | Status |
+|---|---|
+| #91 — Extension local WS server doesn't exist (CRITICAL) | 🟢 Closed by PR #120 (docs-only) |
+| #99 — Local-mode WS protocol has no version field | 🟢 Closed by PR #120 (subsumed) |
+
+**Decision:** Extension does not build a WS server. SDKs (`recost-dev/middleware-node#37`, `recost-dev/middleware-python#38`) switching local-mode default to NDJSON file at `~/.recost/local-telemetry/${projectId}.jsonl` with top-level `protocolVersion: "1.0"`.
+
+## Wave 6 — Scan submission fidelity (SHIPPED)
+
+| Issue | Status |
+|---|---|
+| #95 — span field dropped at API submission | 🟢 Closed by `recost-dev/api#40` |
+| #96 — silent filtering of unknown-provider calls | 🟢 Closed by `extension#121` |
+
+**Latent bug surfaced (not yet filed):** `detectEndpointProvider(url)` in `src/scanner/endpoint-classification.ts:59` returns hostname-as-fallback instead of `undefined`, making `provider ?? detectEndpointProvider(url) ?? "unknown"` patterns have dead `?? "unknown"` branches everywhere. See `memory/wave6_status.md`.
+
+## Wave 7 — Cost/simulator consistency (IN REVIEW)
+
+| Issue | Status |
+|---|---|
+| #92 — pricing sync may not flow into local cost estimation | 🟡 PR #122 (closes on merge) |
+| #93 — frequency-class multipliers diverge | 🟡 PR #122 (closes on merge) |
+
+**Framing:** Two layers compute cost — authoritative (API + telemetry) and heuristic (extension static scan). Reconciliation was rejected; PR adds labeling + code comments + CLAUDE.md section saying these are intentionally divergent.
+
+**Spec:** `docs/superpowers/specs/2026-05-21-wave7-cost-simulator-consistency-design.md`
+**Plan:** `docs/superpowers/plans/2026-05-21-wave7-cost-simulator-consistency.md`
+**Branch / worktree:** `wave7/cost-simulator-labeling` at `../extension-wave7`
+
+**Gates:** build clean, 4/4 tests pass, D1 benchmark Δ +0.00pp on all 5 metrics.
+
+**Post-merge follow-ups:** EDH smoke-test (3 boxes in PR test plan); post explanatory closure comments on #92/#93 from plan Task 9 Step 3.
+
+## Wave 8 — Status/error UX (NOT STARTED)
+
+| Issue | Severity |
+|---|---|
+| #46 — valid-key indicator finicky | bug |
+| #94 — `validateRcApiKey()` treats 404 as "valid in dev mode" | HIGH |
+| #100 — 429 not surfaced distinctly in extension UI | bug |
+
+Next wave per severity order. Brainstorm first. `area/extension-ux`.
+
+## Wave 10 — Config hygiene (NOT STARTED)
+
+| Issue | Severity |
+|---|---|
+| #97 — hard-coded base URLs scattered | Low/Med |
+| #98 — `local-${Date.now()}` scanId 1ms collision | Low |
+
+## Accuracy waves (deprioritized vs platform)
+
+| Wave | Issues |
+|---|---|
+| 5 Housekeeping | #118 sort findingMetricsByType, #119 verify D1 CI gate |
+| 3 Resolver follow-ups | #114 A3 default-import, #115 A5 factory-with-args, #116 narrow images.generate batchCapable |
+| 1 Findings quality | #84 C2 dedupe, #85 C3 confidence everywhere, #112 tighten CACHE_GUARD/BATCH_GUARD |
+| 2 Traceability | #81 B2 dual locations, #113 barrel+factory corpus fixtures |
+| 4 Recall recovery | #117 — depends on Wave 3 #116 |
+
+## Standalones (no wave)
+
+- **#45** — Extension opt-in Project ID persistence
+- **#52** — Web dashboard theming (defer indefinitely)
+
+## How to pick up next session
+
+1. Run `gh issue list --state open --limit 50` to confirm the wave labels haven't shifted.
+2. Check this file's "Overall Wave Status" table — first ⬜ wave by execution order is next.
+3. Read the relevant issues with `gh issue view <N>`.
+4. Invoke `superpowers:brainstorming` if the wave needs a fresh spec; otherwise `superpowers:executing-plans` if a plan already exists.
+5. Update the Status column here when status changes (⬜ → 🟡 → 🟢) and append to the Activity Log.
+
 ## Activity Log
 
 > Append `YYYY-MM-DD HH:MM — <one-line update>`. Newest at top.
 
+- 2026-05-21 — **Wave 7 PR opened (#122).** Closes #92 + #93 as design-resolved via labeling, not reconciliation. 7 commits on `wave7/cost-simulator-labeling` (worktree `../extension-wave7`): shared `EstimateDisclaimer` component, render on Simulate tab, code comments on `LOCAL_PRICING` + `FREQUENCY_CLASS_MULTIPLIERS`, CLAUDE.md "Cost numbers: heuristic vs authoritative" section. All gates green (build, 4/4 tests, D1 Δ +0.00pp). Spec + plan committed to main. Wave 8 (#46/#94/#100) is next per severity order.
+- 2026-05-15 — **Wave 9 closed docs-only via PR #120**, **Wave 6 shipped** (api#40 + extension#121). Both detailed in `memory/wave9_local_mode_resolution.md` and `memory/wave6_status.md`.
+- 2026-05-13 to 2026-05-15 — **C1 calibration shipped** across PRs #106 (per-detector measurement) → #108 (cache tightening) → #109 (batch tightening) → #110 (A3/A5 resolver recall) → #111 (rate_limit + residual batch). Finding precision 9.09% → 100%, recall held. Closes #83.
+- 2026-05-13 — **A6/A2/A7 detection fixes merged** (#102, #103, #104), corpus bumped (#105), **A1 multi-hop wrappers** opened (#107). See `memory/detection_fixes_shipped_2026_05_13.md`.
 - 2026-05-12 05:30 — A4 **shipped**. F1 (`c18c8c8` runner + empty allowlist), Batch A (`11c65e4` all 7 fixtures landed via parallel controller-driven writes; serial-fallback commit form chosen over per-agent worktrees because each fixture is a single verbatim Write and the worktree overhead would have dominated wall-time), F2 (`36a3601` test entry + npm wiring + fixture-dir source-tree resolution fix — plan's `__dirname/fixtures/parity` resolved to dist-test/test/fixtures, fixed to `../../src/test/fixtures/parity` since tsc excludes fixtures from compilation). First parity run surfaced 2 divergences. Triage (`91fc235`): both shared a root cause — `generic-http.ts` hardcoded `provider: "generic-http"` even with known hosts, and the fetch fallback regex emitted GET for multi-line option objects. Fix: reuse `lookupHost()` for host-based provider attribution + tighten fallback regex to require closing paren on the same line. After fix, both divergences collapsed to AST-only-multi-line cases (`e6f2062` allowlisted with structural reasons). V criteria all met; CI invocation confirmed (`.github/workflows/test.yml` → `npm test` → `test:scanner` → `parity.test.js`).
 - 2026-05-12 04:30 — B3 **code complete** across all 9 tasks. Batch A (T1 url-template `fba4295`, T2 enclosing-function `a81fd02`) ran via parallel worktrees with controller merge in declared order; T2 follow-up `a8f2be2` added destructure-binding clarifier comment + nested-function test per code-quality review. F1 (T3 `694dc30` + follow-up `d6b0feb` switched to `normalizeRepoPath` from `intelligence/path-utils`, removing a divergent local re-implementation flagged by code-quality review). F2 (T4 `4799fcc` emit at 9 AST scanner sites + 5 fixture updates; follow-up `b9e54be` documented the asymmetric `enclosingFunction` field and the 7d override semantics). Batch B (T5 builder `7cea7b8`, T6 scan-results `2e6b3a8`) again via parallel worktrees; T6 reviewer spotted a second `local-${scanId}` minter in `webview-provider.ts` and an O(n²) collision-check spread — both addressed (`e8a8fee` Set-based collision check, then folded the second emit site into T7's commit `0c7c707`). T7 (C) added `pruneSavedScenariosAgainst` invoked on both local-only and remote-enriched scan completion paths; `6b8828b` added a zero-endpoint guard preventing silent destruction of saved scenarios on empty/misconfigured scans. T8 (D) appended 2 end-to-end stability tests (`977e4f4`). T9 (V) automated 4 of 5 acceptance criteria across `url-template.test.ts`, `enclosing-function.test.ts`, `endpoint-id.test.ts` (13 cases); criterion #5 (saved scenarios survive non-structural changes) is code-complete but **awaits manual EDH verification per T7 Step 4** — F5 the dev host, save a simulator scenario, edit an unrelated file, re-scan, confirm the scenario still loads.
 - 2026-05-12 03:50 — B1 **code complete**. T10 (`69ca79d`) extended `openFile` IPC with `span?` field; `webview-provider.ts` handler builds `vscode.Range` from span when present (falls back to line cursor); `ResultsPage.tsx` sends `site?.span`; webview-side `SourceSpan` mirror added to `webview/src/types.ts` for typecheck. T11 (`371fd8e`) updated `docs/accuracy/traceability.md` § B1 — 3/4 acceptance criteria automated-verified (span field present, multi-line endLine>startLine, line back-compat). **Criterion #3 (full-call selection on click) requires manual EDH verification** — F5 the dev host, run a scan on a workspace with a multi-line `await openai.chat.completions.create({...})`, click that endpoint, confirm the selection covers from `await` through the closing `)`.
