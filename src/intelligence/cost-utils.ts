@@ -3,6 +3,7 @@ import { lookupMethod, lookupByUrlPath } from "../scanner/fingerprints/registry"
 // Best-effort local cost estimation shared by the webview and intelligence
 // layer. When a provider or pricing signal is missing, callers can fall back
 // to null rather than blocking snapshot creation.
+
 // Static fallback pricing for providers without fingerprints. Intentionally not
 // synced from the backend — extension cost numbers are heuristics, not authoritative.
 // Use runtime telemetry on the ReCost dashboard for real cost.
