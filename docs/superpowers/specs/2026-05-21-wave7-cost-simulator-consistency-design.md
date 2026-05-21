@@ -33,25 +33,25 @@ Extension numbers are **estimates by design**. The simulator multipliers (relati
 
 ### 1. Webview UI — "estimate" labeling
 
-Three locations get a consistent affordance signaling the number is a static-analysis estimate.
+The existing `ResultsPage.tsx` already renders an `EstimateDisclaimer` banner (line 684, above tab content — visible on both Issues and Endpoints subtabs) and uses `"Est."` prefix / `"est. savings"` suffix on cost figures. The `SimulatePage.tsx` has no equivalent disclaimer. The work is to:
 
-#### 1a. Sidebar — Endpoints subtab (`webview/src/components/ResultsPage.tsx`)
+#### 1a. Update the disclaimer copy
 
-- Per-endpoint monthly cost figures get a `~` prefix (e.g. `~$0.04 / mo`).
-- A single footer line below the endpoint list:
-  > Cost figures are static-analysis estimates. The dashboard shows runtime-measured costs.
+Refine `ESTIMATE_DISCLAIMER` in `webview/src/components/ResultsPage.tsx:12` to explicitly point at the dashboard as the source of authoritative cost:
 
-#### 1b. Sidebar — Findings subtab (`webview/src/components/ResultsPage.tsx`)
+> Static-analysis estimates based on code patterns. The ReCost dashboard shows runtime-measured costs from production.
 
-- Per-suggestion estimated savings get the same `~` prefix.
-- No separate footer (the Endpoints footer is enough — Findings is in the same tab).
+The new copy keeps the existing "estimate" framing but names the dashboard explicitly.
 
-#### 1c. Sidebar — Simulate tab (`webview/src/components/SimulatePage.tsx`)
+#### 1b. Add the same disclaimer to Simulate tab
 
-- Header subtitle (existing or new) reads:
-  > Projection based on static-analysis estimates. Compare against runtime numbers on the dashboard for real cost.
+Hoist `EstimateDisclaimer` (and `ESTIMATE_DISCLAIMER`) into a small shared module (e.g. `webview/src/components/EstimateDisclaimer.tsx`) so both `ResultsPage.tsx` and `SimulatePage.tsx` import and render the same component. Render it at the top of `SimulatePage`'s scroll container (just inside the existing `eco-scroll-invisible` div around line 396), with the same styling.
 
-No tooltips, no badges, no icons. Just the `~` prefix where a number appears and the footer / subtitle line. Minimal visual change.
+#### 1c. No other UI changes
+
+The Endpoints subtab does not render per-endpoint cost figures — only method/provider/url/file:line. There is nothing to prefix there. The summary `"Est. $X/mo spend"` (line 642) and suggestion `"est. savings"` (line 272) already follow the convention; leave them as-is.
+
+No `~` prefix, no badges, no tooltips beyond what exists. Minimal visual change.
 
 ### 2. Code comments — explain the static-by-design choice
 
@@ -94,15 +94,16 @@ New short section under "Architecture Notes" (~10 lines):
 
 ```
 src/
-  intelligence/cost-utils.ts        # + header comment on LOCAL_PRICING
-  simulator/engine.ts               # + header comment on FREQUENCY_CLASS_MULTIPLIERS
+  intelligence/cost-utils.ts            # + header comment on LOCAL_PRICING
+  simulator/engine.ts                   # + header comment on FREQUENCY_CLASS_MULTIPLIERS
 webview/src/components/
-  ResultsPage.tsx                   # + ~ prefix on cost / savings figures, + footer line
-  SimulatePage.tsx                  # + header subtitle line
-CLAUDE.md                           # + "Cost numbers: heuristic vs authoritative" section
+  EstimateDisclaimer.tsx                # NEW — shared component, exports EstimateDisclaimer + ESTIMATE_DISCLAIMER
+  ResultsPage.tsx                       # remove local copy, import shared component; copy refined
+  SimulatePage.tsx                      # render <EstimateDisclaimer /> at top of scroll container
+CLAUDE.md                               # + "Cost numbers: heuristic vs authoritative" section
 ```
 
-No new files. No new tests. No new dependencies.
+One new file (a 30-line shared component). No new tests. No new dependencies.
 
 ## Testing
 
@@ -112,16 +113,15 @@ Manual verification:
 
 1. Run a workspace scan in the Extension Development Host.
 2. Open the sidebar.
-3. Endpoints subtab: confirm each monthly cost figure starts with `~` and the footer line is present below the list.
-4. Findings subtab: confirm each estimated-savings figure starts with `~`.
-5. Simulate tab: confirm the header subtitle line is present.
-6. D1 benchmark gate must continue to pass (no scanner / detector behavior changed; baseline.json untouched).
+3. Findings / Endpoints subtabs: confirm the updated `EstimateDisclaimer` banner is at the top and the copy mentions the dashboard.
+4. Switch to the Simulate tab: confirm the same disclaimer banner is at the top of the scroll container.
+5. D1 benchmark gate must continue to pass (no scanner / detector behavior changed; baseline.json untouched).
 
 ## Risk + rollback
 
-Risk is cosmetic only — copy and a `~` prefix. Rollback is a revert of one commit.
+Risk is cosmetic only — copy refinement, one shared component, two import sites. Rollback is a revert of one commit.
 
-The only non-obvious risk: the `~` prefix might collide with existing formatting in `format.ts` if a cost is already prefixed. Audit `formatCost()` and `formatCostRange()` (`dashboard/src/lib/format.ts`) and the webview's local cost formatter before applying — these utilities may already produce ranges (`$0.02–$0.07`) and a leading `~` should sit outside the range, not inside.
+There's no behavioral change to pricing, simulation, or the scanner. No data shape change. No IPC change. No test impact.
 
 ## Out of scope (filed as follow-ups if discovered during implementation)
 
