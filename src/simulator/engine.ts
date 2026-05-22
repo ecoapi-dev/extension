@@ -8,11 +8,11 @@ import type {
 } from "./types";
 import { UNCERTAINTY_FACTOR } from "./types";
 
-/**
- * Default call-volume multipliers derived from the AST frequency class.
- * Applied when no user override is set, making the simulation reflect
- * real-world patterns (e.g. a polling call fires many times per session).
- */
+// Relative scaling multipliers applied on top of user-configured call volume.
+// These differ from the api-side analysis-service constants by design — the
+// API computes absolute calls/day from runtime telemetry; the simulator applies
+// relative scaling to user inputs. Both are correct for their context; do not
+// reconcile. See CLAUDE.md "Cost numbers: heuristic vs authoritative."
 const FREQUENCY_CLASS_MULTIPLIERS: Record<string, number> = {
   "unbounded-loop": 10,
   "polling": 8,

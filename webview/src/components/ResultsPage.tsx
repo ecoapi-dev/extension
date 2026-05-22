@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Markdown } from "./Markdown";
+import { EstimateDisclaimer } from "./EstimateDisclaimer";
 import type { Suggestion, ScanSummary, EndpointRecord } from "../types";
 import { postMessage } from "../vscode";
 
@@ -7,25 +8,6 @@ interface ResultsPageProps {
   suggestions: Suggestion[];
   summary: ScanSummary;
   endpoints: EndpointRecord[];
-}
-
-const ESTIMATE_DISCLAIMER = "These are estimates based on code patterns. Add the ReCost SDK to see real production costs.";
-
-function EstimateDisclaimer() {
-  return (
-    <div
-      style={{
-        padding: "8px 12px",
-        borderBottom: "1px solid var(--vscode-panel-border)",
-        background: "color-mix(in srgb, var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground)) 8%, var(--vscode-editor-background))",
-        color: "var(--vscode-descriptionForeground)",
-        fontSize: "11px",
-        lineHeight: 1.4,
-      }}
-    >
-      {ESTIMATE_DISCLAIMER}
-    </div>
-  );
 }
 
 function formatCost(n: number): string {

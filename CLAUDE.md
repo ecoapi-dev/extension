@@ -248,6 +248,15 @@ The results screen (`ResultsPage.tsx`) has three top-level tabs: **Findings**, *
 
 **Chat tab**: key-missing warning appears as an inline bubble in the message stream, not as a subtitle bar.
 
+### Cost numbers: heuristic vs authoritative
+
+Two layers compute cost numbers and they are intentionally not reconciled:
+
+- **Authoritative** (API + runtime middleware): fingerprint-based pricing + real telemetry. Source of truth, surfaced on the ReCost dashboard.
+- **Heuristic** (extension static scan): `LOCAL_PRICING` in `src/intelligence/cost-utils.ts` + `FREQUENCY_CLASS_MULTIPLIERS` in `src/simulator/engine.ts`. Estimates for risk surfacing and scale projection inside the editor; never expected to match the API exactly.
+
+Do not refactor the extension to consume API constants or sync `LOCAL_PRICING`. The webview's `EstimateDisclaimer` banner labels the numbers as estimates and points users at the dashboard for real cost.
+
 ## VSCode Settings
 
 | Setting | Default | Description |

@@ -9,6 +9,7 @@ import type {
   EndpointSimResult,
 } from "../types";
 import { SCALE_PRESETS } from "../types";
+import { EstimateDisclaimer } from "./EstimateDisclaimer";
 
 type Grouping = "provider" | "endpoint";
 
@@ -394,6 +395,9 @@ export function SimulatePage({ endpoints }: SimulatePageProps) {
       }}
     >
       <div className="eco-scroll-invisible" style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}>
+        <div style={{ margin: "-10px -12px 10px" }}>
+          <EstimateDisclaimer />
+        </div>
 
         {/* Mode toggle */}
         <div style={{ display: "flex", gap: "4px", marginBottom: "10px" }}>
