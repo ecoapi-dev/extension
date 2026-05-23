@@ -146,12 +146,37 @@ async function runTests() {
     }
   }
 
-  // 9. apiFetch leaves retryAfterSeconds undefined when Retry-After is absent or non-numeric
+  // 9. apiFetch leaves retryAfterSeconds undefined when Retry-After is absent
   {
     const restore = installFetch(
       () =>
         new Response(JSON.stringify({ error: { message: "rate limited" } }), {
           status: 429,
+        })
+    );
+    try {
+      let caught: (Error & { status?: number; retryAfterSeconds?: number }) | null = null;
+      try {
+        await validateApiKey("rc-good");
+      } catch (err) {
+        caught = err as Error & { status?: number; retryAfterSeconds?: number };
+      }
+      assert.ok(caught, "expected validateApiKey to throw on 429");
+      assert.equal(caught!.status, 429);
+      assert.equal(caught!.retryAfterSeconds, undefined);
+    } finally {
+      restore();
+    }
+  }
+
+  // 10. apiFetch leaves retryAfterSeconds undefined when Retry-After is an HTTP-date (RFC 7231)
+  // We only accept integer seconds; the date form is silently dropped per spec.
+  {
+    const restore = installFetch(
+      () =>
+        new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+          status: 429,
+          headers: { "Retry-After": "Wed, 21 Oct 2099 07:28:00 GMT" },
         })
     );
     try {

@@ -6,6 +6,8 @@ interface ApiError {
   error?: { message?: string };
 }
 
+export type ApiClientError = Error & { status: number; retryAfterSeconds?: number };
+
 async function apiFetch<T>(path: string, init?: RequestInit, rcApiKey?: string): Promise<T> {
   return apiFetchWith(path, init, rcApiKey, fetch);
 }
@@ -26,7 +28,7 @@ async function apiFetchWith<T>(
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as ApiError;
     const msg = body?.error?.message ?? `API error ${res.status}`;
-    const err = new Error(msg) as Error & { status: number; retryAfterSeconds?: number };
+    const err = new Error(msg) as ApiClientError;
     err.status = res.status;
     if (res.status === 429) {
       const header = res.headers.get("Retry-After");
