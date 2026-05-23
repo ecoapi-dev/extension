@@ -26,8 +26,15 @@ async function apiFetchWith<T>(
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as ApiError;
     const msg = body?.error?.message ?? `API error ${res.status}`;
-    const err = new Error(msg) as Error & { status: number };
+    const err = new Error(msg) as Error & { status: number; retryAfterSeconds?: number };
     err.status = res.status;
+    if (res.status === 429) {
+      const header = res.headers.get("Retry-After");
+      const parsed = header !== null ? Number.parseInt(header, 10) : NaN;
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        err.retryAfterSeconds = parsed;
+      }
+    }
     throw err;
   }
   return res.json() as Promise<T>;

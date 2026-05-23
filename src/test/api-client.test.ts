@@ -122,6 +122,53 @@ async function runTests() {
     }
   }
 
+  // 8. apiFetch attaches retryAfterSeconds on 429 with numeric Retry-After
+  {
+    const restore = installFetch(
+      () =>
+        new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+          status: 429,
+          headers: { "Retry-After": "42" },
+        })
+    );
+    try {
+      let caught: (Error & { status?: number; retryAfterSeconds?: number }) | null = null;
+      try {
+        await validateApiKey("rc-good");
+      } catch (err) {
+        caught = err as Error & { status?: number; retryAfterSeconds?: number };
+      }
+      assert.ok(caught, "expected validateApiKey to throw on 429");
+      assert.equal(caught!.status, 429);
+      assert.equal(caught!.retryAfterSeconds, 42);
+    } finally {
+      restore();
+    }
+  }
+
+  // 9. apiFetch leaves retryAfterSeconds undefined when Retry-After is absent or non-numeric
+  {
+    const restore = installFetch(
+      () =>
+        new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+          status: 429,
+        })
+    );
+    try {
+      let caught: (Error & { status?: number; retryAfterSeconds?: number }) | null = null;
+      try {
+        await validateApiKey("rc-good");
+      } catch (err) {
+        caught = err as Error & { status?: number; retryAfterSeconds?: number };
+      }
+      assert.ok(caught, "expected validateApiKey to throw on 429");
+      assert.equal(caught!.status, 429);
+      assert.equal(caught!.retryAfterSeconds, undefined);
+    } finally {
+      restore();
+    }
+  }
+
   console.log("PASS api-client");
 }
 
