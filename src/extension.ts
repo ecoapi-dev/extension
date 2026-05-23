@@ -43,15 +43,9 @@ async function updateStatusBar(
   }
   try {
     const user = await validateApiKey(key);
-    if (user) {
-      logStatus(output, `updateStatusBar: validateApiKey succeeded for ${user.email}; setting keyOnline=true`);
-      statusBar.text = `$(check) ReCost: ${user.email}`;
-      statusBar.tooltip = `Connected as ${user.email}`;
-    } else {
-      logStatus(output, "updateStatusBar: validateApiKey returned no user but succeeded; setting keyOnline=true");
-      statusBar.text = "$(check) ReCost: Connected";
-      statusBar.tooltip = "ReCost API key configured";
-    }
+    logStatus(output, `updateStatusBar: validateApiKey succeeded for ${user.email}; setting keyOnline=true`);
+    statusBar.text = `$(check) ReCost: ${user.email}`;
+    statusBar.tooltip = `Connected as ${user.email}`;
     statusBar.color = new vscode.ThemeColor("testing.iconPassed");
     await vscode.commands.executeCommand("setContext", "recost.keyOnline", true);
     return true;

@@ -129,24 +129,17 @@ export interface AuthMeUser {
 
 /**
  * Validates an API key against GET /auth/me.
- * Returns AuthMeUser on success, null for 404 (dev mode — endpoint not yet deployed).
+ * Returns AuthMeUser on success.
  * Throws with err.status === 401 for invalid key.
+ * Throws with err.status === <code> for other HTTP errors (including 404).
  * Throws without .status for network errors.
  */
-export async function validateApiKey(key: string): Promise<AuthMeUser | null> {
+export async function validateApiKey(key: string): Promise<AuthMeUser> {
   if (!key.startsWith("rc-")) {
     const err = new Error("Invalid ReCost API key — keys must start with rc-") as Error & { status: number };
     err.status = 401;
     throw err;
   }
-  try {
-    const { data } = await apiFetch<{ data: AuthMeUser }>("/auth/me", undefined, key);
-    return data;
-  } catch (err: unknown) {
-    const error = err as Error & { status?: number };
-    if (error.status === 404) {
-      return null; // Dev mode: auth endpoint not deployed, treat key as valid
-    }
-    throw err;
-  }
+  const { data } = await apiFetch<{ data: AuthMeUser }>("/auth/me", undefined, key);
+  return data;
 }

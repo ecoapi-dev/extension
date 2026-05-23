@@ -78,12 +78,18 @@ async function runTests() {
     }
   }
 
-  // 5. validateApiKey returns null on 404 (dev-mode backend, /auth/me not deployed)
+  // 5. validateApiKey throws with status: 404 when /auth/me returns 404
   {
     const restore = installFetch(() => new Response("", { status: 404 }));
     try {
-      const r = await validateApiKey("rc-validlooking");
-      assert.equal(r, null);
+      let caught: (Error & { status?: number }) | null = null;
+      try {
+        await validateApiKey("rc-validlooking");
+      } catch (err) {
+        caught = err as Error & { status?: number };
+      }
+      assert.ok(caught, "expected validateApiKey to throw on 404");
+      assert.equal(caught!.status, 404);
     } finally {
       restore();
     }
