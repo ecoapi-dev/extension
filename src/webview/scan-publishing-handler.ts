@@ -5,7 +5,7 @@ import {
   countScopedWorkspaceFiles,
   getWorkspaceScanFiles,
 } from "../scanner/workspace-scanner";
-import { createProject, submitScan, getAllEndpoints, getAllSuggestions } from "../api-client";
+import { createProject, submitScan, getAllEndpoints, getAllSuggestions, type ApiClientError } from "../api-client";
 import type { HostMessage, KeyServiceId } from "../messages";
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "../analysis/types";
 import { classifyEndpointScope, detectEndpointProvider } from "../scanner/endpoint-classification";
@@ -778,10 +778,11 @@ export class ScanPublishingHandler {
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Remote analysis failed";
-        const status = (err as { status?: number }).status;
+        const apiErr = err as Partial<ApiClientError>;
+        const status = apiErr.status;
 
         if (status === 429) {
-          const retryAfter = (err as { retryAfterSeconds?: number }).retryAfterSeconds;
+          const retryAfter = apiErr.retryAfterSeconds;
           const waitText = retryAfter !== undefined
             ? `Try again in ${retryAfter} second${retryAfter === 1 ? "" : "s"}.`
             : "Try again in a moment.";
