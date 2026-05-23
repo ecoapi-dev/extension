@@ -131,6 +131,10 @@ function scheduleKeyIndicatorRefresh(
   output: vscode.OutputChannel,
   reason: string
 ): void {
+  if (reason === "windowFocused" && Date.now() - lastValidationAt < 60_000) {
+    logStatus(output, `scheduleKeyIndicatorRefresh: debounced reason=${reason}`);
+    return;
+  }
   void (async () => {
     logStatus(output, `scheduleKeyIndicatorRefresh: begin reason=${reason}`);
     await updateStatusBar(statusBar, context, output);
@@ -256,11 +260,6 @@ export function activate(context: vscode.ExtensionContext) {
       if (event.focused) {
         scheduleKeyIndicatorRefresh(statusBar, context, statusOutput, "windowFocused");
       }
-    })
-  );
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeWorkspaceFolders(() => {
-      scheduleKeyIndicatorRefresh(statusBar, context, statusOutput, "workspaceFoldersChanged");
     })
   );
 
