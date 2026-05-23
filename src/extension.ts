@@ -43,7 +43,7 @@ async function updateStatusBar(
     statusBar.tooltip = "Click to manage your ReCost API keys";
     statusBar.color = undefined;
     await vscode.commands.executeCommand("setContext", "recost.keyOnline", false);
-    lastValidationAt = Date.now();
+    if (myGen === validationGeneration) lastValidationAt = Date.now();
     return false;
   }
   try {
@@ -54,7 +54,7 @@ async function updateStatusBar(
     statusBar.tooltip = `Connected as ${user.email}`;
     statusBar.color = new vscode.ThemeColor("testing.iconPassed");
     await vscode.commands.executeCommand("setContext", "recost.keyOnline", true);
-    lastValidationAt = Date.now();
+    if (myGen === validationGeneration) lastValidationAt = Date.now();
     return true;
   } catch (err: unknown) {
     if (myGen !== validationGeneration) return false;
@@ -68,7 +68,7 @@ async function updateStatusBar(
         statusBar.tooltip = "Stored ReCost key was previously validated, but the latest background auth check returned 401.";
         statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
         await vscode.commands.executeCommand("setContext", "recost.keyOnline", true);
-        lastValidationAt = Date.now();
+        if (myGen === validationGeneration) lastValidationAt = Date.now();
         return true;
       }
       logStatus(output, `updateStatusBar: validateApiKey returned 401 (${error.message}); setting keyOnline=false`);
@@ -76,7 +76,7 @@ async function updateStatusBar(
       statusBar.tooltip = "ReCost API key is invalid. Click to manage keys.";
       statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
       await vscode.commands.executeCommand("setContext", "recost.keyOnline", false);
-      lastValidationAt = Date.now();
+      if (myGen === validationGeneration) lastValidationAt = Date.now();
       return false;
     }
 
@@ -88,7 +88,7 @@ async function updateStatusBar(
       statusBar.tooltip = "ReCost key is stored and was previously validated. ReCost is temporarily unreachable.";
       statusBar.color = new vscode.ThemeColor("testing.iconPassed");
       await vscode.commands.executeCommand("setContext", "recost.keyOnline", true);
-      lastValidationAt = Date.now();
+      if (myGen === validationGeneration) lastValidationAt = Date.now();
       return true;
     } else {
       logStatus(output, `updateStatusBar: validateApiKey failed without trusted snapshot (${error.message}); setting keyOnline=false`);
@@ -96,7 +96,7 @@ async function updateStatusBar(
       statusBar.tooltip = "Cannot reach ReCost. Check your connection.";
       statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
       await vscode.commands.executeCommand("setContext", "recost.keyOnline", false);
-      lastValidationAt = Date.now();
+      if (myGen === validationGeneration) lastValidationAt = Date.now();
       return false;
     }
   }
