@@ -143,7 +143,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   let includeTestFiles = false;
 
-  const provider = new ReCostSidebarProvider(context);
+  const provider = new ReCostSidebarProvider(context, () => {
+    scheduleKeyIndicatorRefresh(statusBar, context, statusOutput, "scanAuthFailure");
+  });
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ReCostSidebarProvider.viewType, provider, {

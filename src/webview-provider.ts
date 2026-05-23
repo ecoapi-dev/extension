@@ -152,6 +152,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
   private readonly keyManagementHandler: KeyManagementHandler;
   private readonly simulationHandler: SimulationHandler;
   private readonly scanPublishingHandler: ScanPublishingHandler;
+  private refreshStatusBar?: () => void;
   private readonly outputChannel: vscode.OutputChannel;
   private readonly projectIdCheckingState = new Set<string>();
 
@@ -195,8 +196,9 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  constructor(context: vscode.ExtensionContext) {
+  constructor(context: vscode.ExtensionContext, refreshStatusBar?: () => void) {
     this.context = context;
+    this.refreshStatusBar = refreshStatusBar;
     this.outputChannel = vscode.window.createOutputChannel("ReCost AI Review");
     this.context.subscriptions.push(this.outputChannel);
     this.simulationHandler = new SimulationHandler({
@@ -251,6 +253,7 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
       setRecostValidationState: (snapshot) => this.setValidationState("recost", snapshot),
       clearRecostValidationState: () => this.clearValidationState("recost"),
       sendRecostKeyStatusUpdate: () => this.sendKeyStatusUpdate("recost", "recost"),
+      refreshStatusBar: () => { this.refreshStatusBar?.(); },
       resetChatHistory: () => this.chatHandler.resetHistory(),
       exportDebugScanResults: (payload) => this.exportDebugScanResults(payload),
       pruneSavedScenariosAgainst: (endpoints) => this.simulationHandler.pruneAgainst(endpoints),

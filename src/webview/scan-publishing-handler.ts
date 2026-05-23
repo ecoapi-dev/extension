@@ -60,6 +60,7 @@ export interface ScanPublishingHandlerContext {
   setRecostValidationState(snapshot: PersistedKeyValidationSnapshot): Promise<void>;
   clearRecostValidationState(): Promise<void>;
   sendRecostKeyStatusUpdate(): Promise<void>;
+  refreshStatusBar(): void;
   resetChatHistory(): void;
   exportDebugScanResults(payload: ExportDebugPayload): Promise<void>;
   pruneSavedScenariosAgainst(endpoints: EndpointRecord[]): Promise<void>;
@@ -778,6 +779,20 @@ export class ScanPublishingHandler {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Remote analysis failed";
         const status = (err as { status?: number }).status;
+
+        if (status === 429) {
+          const retryAfter = (err as { retryAfterSeconds?: number }).retryAfterSeconds;
+          const waitText = retryAfter !== undefined
+            ? `Try again in ${retryAfter} second${retryAfter === 1 ? "" : "s"}.`
+            : "Try again in a moment.";
+          this.ctx.postMessage({
+            type: "scanNotification",
+            message: `ReCost scan rate limit reached. ${waitText} Showing local results.`,
+          });
+          publishLocalOnlyResults(manualProjectId ?? this.ctx.getProjectId() ?? "local", `local-${Date.now()}`);
+          return;
+        }
+
         const authLikeFailure =
           status === 401 ||
           (status === 403 && /invalid|unauthori[sz]ed|forbidden|auth/i.test(message));
@@ -795,6 +810,7 @@ export class ScanPublishingHandler {
             await this.ctx.clearRecostValidationState();
           }
           await this.ctx.sendRecostKeyStatusUpdate();
+          this.ctx.refreshStatusBar();
           this.ctx.openKeys("recost");
         }
         publishLocalOnlyResults(manualProjectId ?? this.ctx.getProjectId() ?? "local", `local-${Date.now()}`);
