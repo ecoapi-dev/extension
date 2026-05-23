@@ -61,7 +61,7 @@ async function runTests() {
   }
 
   // -------- validateApiKey (the /auth/me variant) --------
-  // Returns AuthMeUser on 200, null on 404 (dev mode), throws on 401, throws on bad prefix.
+  // Returns AuthMeUser on 200; throws on 404, 401, network errors, or bad prefix.
 
   // 4. validateApiKey rejects keys that don't start with rc- (no fetch made)
   {
@@ -116,7 +116,7 @@ async function runTests() {
     );
     try {
       const r = await validateApiKey("rc-good");
-      assert.equal((r as { email: string } | null)?.email, "x@y.z");
+      assert.equal((r as { email: string }).email, "x@y.z");
     } finally {
       restore();
     }
