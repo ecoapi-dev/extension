@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { RECOST_API_BASE_URL, RECOST_DASHBOARD_BASE_URL } from "./config";
 import { ReCostSidebarProvider, collectLocalScanData } from "./webview-provider";
 import { validateApiKey } from "./api-client";
 import { syncPricingFromBackend } from "./scanner/fingerprints/registry";
@@ -14,8 +15,8 @@ import { setIncludeTestFiles as setScorerTestFiles } from "./intelligence/scorer
 import { setIncludeTestFiles as setClusterTestFiles } from "./intelligence/clusters";
 
 const ECO_API_KEY = "recost.apiKey";
-const GET_KEY_URL = "https://recost.dev/dashboard/account";
-const PRICING_BACKEND_URL = "https://api.recost.dev";
+const GET_KEY_URL = `${RECOST_DASHBOARD_BASE_URL}/dashboard/account`;
+const PRICING_BACKEND_URL = RECOST_API_BASE_URL;
 const DEFAULT_SYNC_INTERVAL_HOURS = 6;
 const KEY_VALIDATION_STATE_STORAGE_KEY = "recost.keyValidationState";
 

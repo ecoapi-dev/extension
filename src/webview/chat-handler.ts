@@ -16,6 +16,7 @@ import {
   type NormalizedChatMessage,
   type NormalizedChatRequest,
 } from "../chat";
+import { newLocalScanId } from "../scan-id";
 // Local copies of small pure helpers used here. Avoid importing from
 // webview-provider.ts to prevent a circular import. Originals remain in
 // webview-provider.ts where non-chat code also uses them.
@@ -411,7 +412,7 @@ export class ChatHandler {
   private mapAiFindingToSuggestion(finding: AiFinding, index: number): Suggestion {
     const lastEndpoints = this.ctx.getLastEndpoints();
     const providerProjectId = this.ctx.getProjectId();
-    const scanId = lastEndpoints[0]?.scanId ?? providerProjectId ?? `local-${Date.now()}`;
+    const scanId = lastEndpoints[0]?.scanId ?? providerProjectId ?? newLocalScanId();
     const projectId = lastEndpoints[0]?.projectId ?? providerProjectId ?? "local";
     const fileEndpoints = lastEndpoints.filter((ep) => ep.files.includes(finding.affectedFile));
     const related = fileEndpoints.map((endpoint) => endpoint.id);

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import * as path from "path";
+import { newLocalScanId } from "../scan-id";
 import { createFilesystemScanAccess } from "./filesystem-adapter";
 import { detectLocalWastePatternsInFiles, scanFiles } from "../scanner/core-scanner";
 import { createProject, getAllEndpoints, getAllSuggestions, submitScan } from "../api-client";
@@ -226,7 +227,7 @@ async function main(): Promise<void> {
   const localWasteFindings = await detectLocalWastePatternsInFiles(access);
   let mode: CliResult["mode"] = "local-only";
   let projectId = "local";
-  let scanId = `local-${Date.now()}`;
+  let scanId = newLocalScanId();
   let finalResults = buildLocalScanResults(apiCalls, localWasteFindings, projectId, scanId);
 
   const rcApiKey = resolveRcApiKey();

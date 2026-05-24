@@ -1,10 +1,11 @@
 import { ChatAdapterError, ensureStringContent } from "../errors";
 import type { ChatProviderAdapter, HttpErrorContext, NormalizedChatResponse } from "../types";
+import { RECOST_API_BASE_URL } from "../../config";
 
 export const ecoAdapter: ChatProviderAdapter = {
   id: "recost",
   displayName: "ReCost AI",
-  baseUrl: "https://api.recost.dev",
+  baseUrl: RECOST_API_BASE_URL,
   defaultChatEndpoint: "/chat",
   authHeaderFormat: "none",
   supportsStreaming: false,
