@@ -34,6 +34,7 @@ import { ChatHandler } from "./webview/chat-handler";
 import { KeyManagementHandler } from "./webview/key-management-handler";
 import { SimulationHandler } from "./webview/simulation-handler";
 import { ScanPublishingHandler, type ExportDebugPayload } from "./webview/scan-publishing-handler";
+import { RECOST_DASHBOARD_BASE_URL } from "./config";
 
 async function resolveWorkspaceFileSafely(
   workspaceFolder: vscode.WorkspaceFolder,
@@ -731,8 +732,8 @@ export class ReCostSidebarProvider implements vscode.WebviewViewProvider {
           : null;
 
       const url = targetProjectId
-        ? `https://recost.dev/dashboard/projects/${targetProjectId}`
-        : "https://recost.dev/dashboard/projects";
+        ? `${RECOST_DASHBOARD_BASE_URL}/dashboard/projects/${targetProjectId}`
+        : `${RECOST_DASHBOARD_BASE_URL}/dashboard/projects`;
       await vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to open dashboard";

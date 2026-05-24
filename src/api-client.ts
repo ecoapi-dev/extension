@@ -1,6 +1,7 @@
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
+import { RECOST_API_BASE_URL } from "./config";
 
-const BASE_URL = "https://api.recost.dev";
+const BASE_URL = RECOST_API_BASE_URL;
 
 interface ApiError {
   error?: { message?: string };
