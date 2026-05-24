@@ -5,7 +5,7 @@ import {
   countScopedWorkspaceFiles,
   getWorkspaceScanFiles,
 } from "../scanner/workspace-scanner";
-import { createProject, submitScan, getAllEndpoints, getAllSuggestions } from "../api-client";
+import { createProject, submitScan, getAllEndpoints, getAllSuggestions, type ApiClientError } from "../api-client";
 import type { HostMessage, KeyServiceId } from "../messages";
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "../analysis/types";
 import { classifyEndpointScope, detectEndpointProvider } from "../scanner/endpoint-classification";
@@ -60,6 +60,7 @@ export interface ScanPublishingHandlerContext {
   setRecostValidationState(snapshot: PersistedKeyValidationSnapshot): Promise<void>;
   clearRecostValidationState(): Promise<void>;
   sendRecostKeyStatusUpdate(): Promise<void>;
+  refreshStatusBar(): void;
   resetChatHistory(): void;
   exportDebugScanResults(payload: ExportDebugPayload): Promise<void>;
   pruneSavedScenariosAgainst(endpoints: EndpointRecord[]): Promise<void>;
@@ -777,7 +778,22 @@ export class ScanPublishingHandler {
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Remote analysis failed";
-        const status = (err as { status?: number }).status;
+        const apiErr = err as Partial<ApiClientError>;
+        const status = apiErr.status;
+
+        if (status === 429) {
+          const retryAfter = apiErr.retryAfterSeconds;
+          const waitText = retryAfter !== undefined
+            ? `Try again in ${retryAfter} second${retryAfter === 1 ? "" : "s"}.`
+            : "Try again in a moment.";
+          this.ctx.postMessage({
+            type: "scanNotification",
+            message: `ReCost scan rate limit reached. ${waitText} Showing local results.`,
+          });
+          publishLocalOnlyResults(manualProjectId ?? this.ctx.getProjectId() ?? "local", `local-${Date.now()}`);
+          return;
+        }
+
         const authLikeFailure =
           status === 401 ||
           (status === 403 && /invalid|unauthori[sz]ed|forbidden|auth/i.test(message));
@@ -795,6 +811,7 @@ export class ScanPublishingHandler {
             await this.ctx.clearRecostValidationState();
           }
           await this.ctx.sendRecostKeyStatusUpdate();
+          this.ctx.refreshStatusBar();
           this.ctx.openKeys("recost");
         }
         publishLocalOnlyResults(manualProjectId ?? this.ctx.getProjectId() ?? "local", `local-${Date.now()}`);

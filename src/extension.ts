@@ -20,6 +20,8 @@ const DEFAULT_SYNC_INTERVAL_HOURS = 6;
 const KEY_VALIDATION_STATE_STORAGE_KEY = "recost.keyValidationState";
 
 let activePricingSyncIntervalId: ReturnType<typeof setInterval> | null = null;
+let validationGeneration = 0;
+let lastValidationAt = 0;
 
 function logStatus(output: vscode.OutputChannel, message: string): void {
   const line = `[${new Date().toISOString()}] ${message}`;
@@ -32,55 +34,61 @@ async function updateStatusBar(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel
 ): Promise<boolean> {
+  const myGen = ++validationGeneration;
   const key = await readStoredSecret(getKeyService("recost"), context.secrets);
+  if (myGen !== validationGeneration) return false;
   if (!key) {
     logStatus(output, "updateStatusBar: no stored ReCost key; setting keyOnline=false");
     statusBar.text = "$(key) ReCost: Not Configured";
     statusBar.tooltip = "Click to manage your ReCost API keys";
     statusBar.color = undefined;
     await vscode.commands.executeCommand("setContext", "recost.keyOnline", false);
+    if (myGen === validationGeneration) lastValidationAt = Date.now();
     return false;
   }
   try {
     const user = await validateApiKey(key);
-    if (user) {
-      logStatus(output, `updateStatusBar: validateApiKey succeeded for ${user.email}; setting keyOnline=true`);
-      statusBar.text = `$(check) ReCost: ${user.email}`;
-      statusBar.tooltip = `Connected as ${user.email}`;
-    } else {
-      logStatus(output, "updateStatusBar: validateApiKey returned no user but succeeded; setting keyOnline=true");
-      statusBar.text = "$(check) ReCost: Connected";
-      statusBar.tooltip = "ReCost API key configured";
-    }
+    if (myGen !== validationGeneration) return true;
+    logStatus(output, `updateStatusBar: validateApiKey succeeded for ${user.email}; setting keyOnline=true`);
+    statusBar.text = `$(check) ReCost: ${user.email}`;
+    statusBar.tooltip = `Connected as ${user.email}`;
     statusBar.color = new vscode.ThemeColor("testing.iconPassed");
     await vscode.commands.executeCommand("setContext", "recost.keyOnline", true);
+    if (myGen === validationGeneration) lastValidationAt = Date.now();
     return true;
   } catch (err: unknown) {
+    if (myGen !== validationGeneration) return false;
     const error = err as Error & { status?: number };
     if (error.status === 401) {
-      if (await hasPersistedValidEcoKey(context, output)) {
+      const hasSnapshot = await hasPersistedValidEcoKey(context, output);
+      if (myGen !== validationGeneration) return false;
+      if (hasSnapshot) {
         logStatus(output, `updateStatusBar: validateApiKey returned 401 (${error.message}) but a persisted valid snapshot still exists; keeping keyOnline=true`);
         statusBar.text = "$(warning) ReCost: Auth Check Failed";
         statusBar.tooltip = "Stored ReCost key was previously validated, but the latest background auth check returned 401.";
         statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
         await vscode.commands.executeCommand("setContext", "recost.keyOnline", true);
+        if (myGen === validationGeneration) lastValidationAt = Date.now();
         return true;
       }
-
       logStatus(output, `updateStatusBar: validateApiKey returned 401 (${error.message}); setting keyOnline=false`);
       statusBar.text = "$(warning) ReCost: Invalid Key";
       statusBar.tooltip = "ReCost API key is invalid. Click to manage keys.";
       statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
       await vscode.commands.executeCommand("setContext", "recost.keyOnline", false);
+      if (myGen === validationGeneration) lastValidationAt = Date.now();
       return false;
     }
 
-    if (await hasPersistedValidEcoKey(context, output)) {
+    const hasSnapshot = await hasPersistedValidEcoKey(context, output);
+    if (myGen !== validationGeneration) return false;
+    if (hasSnapshot) {
       logStatus(output, `updateStatusBar: validateApiKey failed transiently (${error.message}); keeping keyOnline=true from persisted valid snapshot`);
       statusBar.text = "$(check) ReCost: Connected";
       statusBar.tooltip = "ReCost key is stored and was previously validated. ReCost is temporarily unreachable.";
       statusBar.color = new vscode.ThemeColor("testing.iconPassed");
       await vscode.commands.executeCommand("setContext", "recost.keyOnline", true);
+      if (myGen === validationGeneration) lastValidationAt = Date.now();
       return true;
     } else {
       logStatus(output, `updateStatusBar: validateApiKey failed without trusted snapshot (${error.message}); setting keyOnline=false`);
@@ -88,6 +96,7 @@ async function updateStatusBar(
       statusBar.tooltip = "Cannot reach ReCost. Check your connection.";
       statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
       await vscode.commands.executeCommand("setContext", "recost.keyOnline", false);
+      if (myGen === validationGeneration) lastValidationAt = Date.now();
       return false;
     }
   }
@@ -122,6 +131,10 @@ function scheduleKeyIndicatorRefresh(
   output: vscode.OutputChannel,
   reason: string
 ): void {
+  if (reason === "windowFocused" && Date.now() - lastValidationAt < 60_000) {
+    logStatus(output, `scheduleKeyIndicatorRefresh: debounced reason=${reason}`);
+    return;
+  }
   void (async () => {
     logStatus(output, `scheduleKeyIndicatorRefresh: begin reason=${reason}`);
     await updateStatusBar(statusBar, context, output);
@@ -149,7 +162,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   let includeTestFiles = false;
 
-  const provider = new ReCostSidebarProvider(context);
+  const provider = new ReCostSidebarProvider(context, () => {
+    scheduleKeyIndicatorRefresh(statusBar, context, statusOutput, "scanAuthFailure");
+  });
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ReCostSidebarProvider.viewType, provider, {
@@ -245,11 +260,6 @@ export function activate(context: vscode.ExtensionContext) {
       if (event.focused) {
         scheduleKeyIndicatorRefresh(statusBar, context, statusOutput, "windowFocused");
       }
-    })
-  );
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeWorkspaceFolders(() => {
-      scheduleKeyIndicatorRefresh(statusBar, context, statusOutput, "workspaceFoldersChanged");
     })
   );
 

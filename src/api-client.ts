@@ -6,6 +6,8 @@ interface ApiError {
   error?: { message?: string };
 }
 
+export type ApiClientError = Error & { status: number; retryAfterSeconds?: number };
+
 async function apiFetch<T>(path: string, init?: RequestInit, rcApiKey?: string): Promise<T> {
   return apiFetchWith(path, init, rcApiKey, fetch);
 }
@@ -26,8 +28,15 @@ async function apiFetchWith<T>(
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as ApiError;
     const msg = body?.error?.message ?? `API error ${res.status}`;
-    const err = new Error(msg) as Error & { status: number };
+    const err = new Error(msg) as ApiClientError;
     err.status = res.status;
+    if (res.status === 429) {
+      const header = res.headers.get("Retry-After");
+      const parsed = header !== null ? Number.parseInt(header, 10) : NaN;
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        err.retryAfterSeconds = parsed;
+      }
+    }
     throw err;
   }
   return res.json() as Promise<T>;
@@ -129,24 +138,17 @@ export interface AuthMeUser {
 
 /**
  * Validates an API key against GET /auth/me.
- * Returns AuthMeUser on success, null for 404 (dev mode — endpoint not yet deployed).
+ * Returns AuthMeUser on success.
  * Throws with err.status === 401 for invalid key.
+ * Throws with err.status === <code> for other HTTP errors (including 404).
  * Throws without .status for network errors.
  */
-export async function validateApiKey(key: string): Promise<AuthMeUser | null> {
+export async function validateApiKey(key: string): Promise<AuthMeUser> {
   if (!key.startsWith("rc-")) {
     const err = new Error("Invalid ReCost API key — keys must start with rc-") as Error & { status: number };
     err.status = 401;
     throw err;
   }
-  try {
-    const { data } = await apiFetch<{ data: AuthMeUser }>("/auth/me", undefined, key);
-    return data;
-  } catch (err: unknown) {
-    const error = err as Error & { status?: number };
-    if (error.status === 404) {
-      return null; // Dev mode: auth endpoint not deployed, treat key as valid
-    }
-    throw err;
-  }
+  const { data } = await apiFetch<{ data: AuthMeUser }>("/auth/me", undefined, key);
+  return data;
 }

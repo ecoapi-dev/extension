@@ -26,6 +26,7 @@ venv/
 
 # Build artifacts
 *.vsix
+*.tsbuildinfo
 
 # ReCost generated output files
 .recost-context.md
