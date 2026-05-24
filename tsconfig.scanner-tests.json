@@ -4,6 +4,6 @@
     "rootDir": "src",
     "outDir": "dist-test"
   },
-  "include": ["src/scanner/**/*", "src/ast/**/*", "src/intelligence/**/*", "src/test/**/*", "src/workspace-file-access.ts"],
+  "include": ["src/scanner/**/*", "src/ast/**/*", "src/intelligence/**/*", "src/test/**/*", "src/workspace-file-access.ts", "src/config.ts"],
   "exclude": ["node_modules", "dist", "webview", "dashboard", "dashboard-dist", "src/test/fixtures", "src/test/benchmark-*.test.ts"]
 }
