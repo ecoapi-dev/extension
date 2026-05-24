@@ -10,5 +10,17 @@
         ]
       }
     ]
+  },
+  "extraKnownMarketplaces": {
+    "recost": {
+      "source": {
+        "source": "github",
+        "repo": "recost-dev/claude-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "design-toolkit@recost": true,
+    "superpowers@recost": true
   }
 }
