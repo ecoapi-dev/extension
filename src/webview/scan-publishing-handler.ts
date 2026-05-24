@@ -791,7 +791,7 @@ export class ScanPublishingHandler {
             type: "scanNotification",
             message: `ReCost scan rate limit reached. ${waitText} Showing local results.`,
           });
-          publishLocalOnlyResults(manualProjectId ?? this.ctx.getProjectId() ?? "local", `local-${Date.now()}`);
+          publishLocalOnlyResults(manualProjectId ?? this.ctx.getProjectId() ?? "local", newLocalScanId());
           return;
         }
 
