@@ -178,6 +178,7 @@ function matchesInRange(
 interface ImportedName {
   localName: string;
   specifier: string; // import source string
+  isDefault: boolean;
 }
 
 /**
@@ -203,18 +204,22 @@ function extractRelativeImports(source: string): ImportedName[] {
         // "X as Y" → local name is Y
         const asMatch = /(\w+)\s+as\s+(\w+)/.exec(trimmed);
         if (asMatch) {
-          results.push({ localName: asMatch[2], specifier });
+          results.push({ localName: asMatch[2], specifier, isDefault: false });
         } else {
           const name = trimmed.match(/\w+/)?.[0];
-          if (name) results.push({ localName: name, specifier });
+          if (name) results.push({ localName: name, specifier, isDefault: false });
         }
       }
     }
 
-    // Default import: import Foo from './path' (clause has no braces)
-    const defaultMatch = /^(\w+)$/.exec(clause.trim());
+    // Default import: either standalone `import Foo from './path'` (clause has no
+    // braces) or mixed `import Foo, { bar } from './path'` (default before comma).
+    // Strip the named block (if any) from the clause first, then test for a bare
+    // word to get the default binding name.
+    const clauseWithoutNamed = clause.replace(/\{[^}]*\}/, "").replace(/,/g, " ").trim();
+    const defaultMatch = /^(\w+)$/.exec(clauseWithoutNamed);
     if (defaultMatch) {
-      results.push({ localName: defaultMatch[1], specifier });
+      results.push({ localName: defaultMatch[1], specifier, isDefault: true });
     }
   }
   return results;
@@ -363,6 +368,7 @@ function resolveExportedMatches(
   sourceByFile: Map<string, string>,
   knownFiles: Set<string>,
   depth: number,
+  isDefault: boolean,
   visited: Set<string> = new Set()
 ): AstCallMatch[] | null {
   if (depth > 2) return null;
@@ -373,7 +379,9 @@ function resolveExportedMatches(
 
   const fileExports = registry.get(fromFile);
   if (fileExports) {
-    const direct = fileExports.get(name);
+    // For a default import, look up the "default" key; for named, use the symbol name.
+    const directKey = isDefault ? "default" : name;
+    const direct = fileExports.get(directKey);
     if (direct && direct.length > 0) return direct;
   }
 
@@ -383,24 +391,22 @@ function resolveExportedMatches(
 
   const reExports = extractReExports(source);
   for (const re of reExports) {
-    // Wildcard re-export (`export * from './other'`) — any name passes through.
-    // Named re-export — only proceed if exportedName matches the requested name.
-    // Also allow `export { default } from './other'` to match any default import:
-    // when a consumer does `import ask from './barrel'`, the barrel may re-export
-    // the default slot explicitly via `export { default } from './api'`. In that
-    // case the requested name is the local alias ("ask"), not "default", so we
-    // need to follow the default re-export and look up "default" in the source.
-    if (re.exportedName !== null && re.exportedName !== name && re.exportedName !== "default") continue;
+    let follow = false;
+    let nextName = name;
+    let nextIsDefault = false;
+    if (isDefault) {
+      // A default binding flows ONLY through `export { default } from "./x"`.
+      if (re.exportedName === "default") { follow = true; nextName = "default"; nextIsDefault = true; }
+    } else {
+      // A named binding flows through wildcards and name-matching named
+      // re-exports, NEVER through `export { default }`.
+      if (re.exportedName === null) { follow = true; nextName = name; }
+      else if (re.exportedName === name) { follow = true; nextName = re.originalName ?? name; }
+    }
+    if (!follow) continue;
     const resolved = resolveImportPath(fromFile, re.specifier, knownFiles);
     if (!resolved) continue;
-    // When the barrel aliases (`export { _internalAsk as ask }`), the source file
-    // knows the symbol by its originalName — recurse with that name so the export
-    // registry lookup finds the actual function.
-    // For wildcards, the name passes through unchanged (originalName is null).
-    // For `export { default }`, recurse with "default" so the registry finds the
-    // `export default function` entry in the source file.
-    const lookupName = re.exportedName === "default" ? "default" : (re.originalName ?? name);
-    const found = resolveExportedMatches(lookupName, resolved, registry, sourceByFile, knownFiles, depth + 1, visited);
+    const found = resolveExportedMatches(nextName, resolved, registry, sourceByFile, knownFiles, depth + 1, nextIsDefault, visited);
     if (found) return found;
   }
 
@@ -537,7 +543,7 @@ export function runCrossFileResolution(
       const { caller, callerPath, callerRelative, imports, callSiteLinesByName } = ctx;
 
       // ── Regular import propagation ─────────────────────────────────────────
-      for (const { localName, specifier } of imports) {
+      for (const { localName, specifier, isDefault } of imports) {
         const resolvedFile = resolveImportPath(callerPath, specifier, normalizedKnown);
         if (!resolvedFile) continue;
 
@@ -564,7 +570,8 @@ export function runCrossFileResolution(
           registry,
           sourceByFile,
           normalizedKnown,
-          0
+          0,
+          isDefault
         );
         if (!calleeMatches || calleeMatches.length === 0) continue;
 
@@ -611,7 +618,8 @@ export function runCrossFileResolution(
           registry,
           sourceByFile,
           normalizedKnown,
-          0
+          0,
+          false
         );
         if (!calleeMatches || calleeMatches.length === 0) continue;
 
