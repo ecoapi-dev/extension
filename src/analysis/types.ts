@@ -17,6 +17,7 @@ export interface ApiCallInput {
   costModel?: "per_token" | "per_transaction" | "per_request" | "free";
   frequencyClass?: "single" | "bounded-loop" | "unbounded-loop" | "parallel" | "polling" | "conditional" | "cache-guarded";
   batchCapable?: boolean;
+  inlineParallelCapable?: boolean;
   cacheCapable?: boolean;
   streaming?: boolean;
   isMiddleware?: boolean;
@@ -56,6 +57,7 @@ export interface EndpointRecord {
   costModel?: "per_token" | "per_transaction" | "per_request" | "free";
   frequencyClass?: string;
   batchCapable?: boolean;
+  inlineParallelCapable?: boolean;
   cacheCapable?: boolean;
   streaming?: boolean;
   isMiddleware?: boolean;
