@@ -38,6 +38,8 @@ export interface MethodFingerprint {
   perRequestCostUsd?: number;
   streaming?: boolean;
   batchCapable?: boolean;
+  /** True for endpoints with an inline n/count parameter (e.g. images.generate) — NOT a real batch API. */
+  inlineParallelCapable?: boolean;
   cacheCapable?: boolean;
   /** Human-readable description of what this method does */
   description?: string;

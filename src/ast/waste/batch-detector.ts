@@ -159,7 +159,7 @@ function detectNPlusOne(
   // Polling and parallel fan-out are handled by other detectors.
   if (!isRealProviderMatch(match)) return null;
   if (!N_PLUS_ONE_FREQS.has(match.frequency)) return null;
-  if (match.batchCapable) return null; // batch-detector handles this one
+  if (match.batchCapable || match.inlineParallelCapable) return null; // batch / inline-parallel detectors handle these
   if (hasGuardInWindow(source, match.line, BATCH_GUARD)) return null;
   if (hasGuardInWindow(source, match.line, CONCURRENCY_GUARD)) return null;
 
@@ -262,6 +262,56 @@ function detectSequential(
   return findings;
 }
 
+// ── Inline-parallel finding (endpoint has an n/count parameter) ───────────────
+
+function detectInlineParallel(
+  match: AstCallMatch,
+  source: string,
+  filePath: string,
+  isTestLike: boolean
+): LocalWasteFinding | null {
+  if (!isRealProviderMatch(match)) return null;
+  if (!BATCH_LOOP_FREQS.has(match.frequency)) return null;
+  if (!match.inlineParallelCapable) return null;
+  if (hasGuardInWindow(source, match.line, BATCH_GUARD)) return null;
+  // Array.from({ length: N }) is intentional bounded replication — not naive fan-out.
+  if (match.frequency === "parallel" && hasGuardInWindow(source, match.line, BOUNDED_REPLICATION)) return null;
+
+  const evidence: string[] = [
+    `Call executes in a "${match.frequency}" context — each iteration issues a separate request.`,
+    "This endpoint accepts an n/count parameter that returns multiple results from a single request.",
+  ];
+  const small = isSmallBounded(source, match.line);
+  if (small) evidence.push("Loop appears bounded to a small collection (≤5 items).");
+
+  let score = 1;
+  if (match.frequency === "unbounded-loop") score += 3;
+  else if (match.frequency === "bounded-loop") score += 2;
+  else if (match.frequency === "parallel") score += 2;
+  // polling is excluded by the BATCH_LOOP_FREQS guard above; branch kept for parity with detectBatch
+  else if (match.frequency === "polling") score += 4;
+  if (small) score -= 1;
+  if (isTestLike) score -= 1;
+
+  let confidence = 0.52 + Math.min(score, 5) * 0.07;
+  if (small) confidence -= 0.10;
+  if (isTestLike) confidence -= 0.10;
+  confidence = clamp(confidence);
+  if (confidence < 0.35) return null;
+
+  return {
+    id: `local-inline_parallel-${filePath}:${match.line}`,
+    type: "batch" as SuggestionType,
+    severity: scoreToSeverity(score),
+    confidence,
+    description:
+      "This endpoint accepts an n/count parameter — request multiple results in a single call instead of issuing one request per item.",
+    affectedFile: filePath,
+    line: match.line,
+    evidence,
+  };
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
@@ -290,6 +340,9 @@ export function detectBatchWaste(
 
     const n1Finding = detectNPlusOne(match, source, filePath, isTestLike);
     if (n1Finding) findings.push(n1Finding);
+
+    const inlineFinding = detectInlineParallel(match, source, filePath, isTestLike);
+    if (inlineFinding) findings.push(inlineFinding);
   }
 
   // Sequential await detection is cross-match, runs once over all matches.

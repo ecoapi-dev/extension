@@ -150,6 +150,7 @@ function astMatchToApiCallInput(match: AstCallMatch, file: string): ApiCallInput
     enclosingFunction: match.enclosingFunction,
     costModel,
     batchCapable: match.batchCapable,
+    inlineParallelCapable: match.inlineParallelCapable,
     cacheCapable: match.cacheCapable,
     streaming: match.streaming,
     isMiddleware: match.isMiddleware,

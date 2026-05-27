@@ -56,6 +56,7 @@ export interface AstCallMatch {
   enclosingFunction: string | null;
   streaming?: boolean;
   batchCapable?: boolean;
+  inlineParallelCapable?: boolean;
   cacheCapable?: boolean;
   /** True when emitted from middleware detection (per-request cost) */
   isMiddleware?: boolean;
@@ -657,7 +658,7 @@ export async function scanSourceWithAst(
           ? { kind: "sdk", provider, packageName, methodChain, confidence: 1.0, method: fp.httpMethod,
               endpoint: fp.endpoint, line, column, span: callInfo.span, frequency, loopContext: inLoop,
               enclosingFunction: methodName,
-              streaming: fp.streaming, batchCapable: fp.batchCapable, cacheCapable: fp.cacheCapable }
+              streaming: fp.streaming, batchCapable: fp.batchCapable, inlineParallelCapable: fp.inlineParallelCapable, cacheCapable: fp.cacheCapable }
           : { kind: "sdk", provider, packageName, methodChain, confidence: provider ? 0.7 : 0.1,
               line, column, span: callInfo.span, frequency, loopContext: inLoop, enclosingFunction: methodName }
         );
@@ -799,7 +800,7 @@ export async function scanSourceWithAst(
         kind: "sdk", provider, packageName, methodChain, confidence: 1.0, method: fp.httpMethod,
         endpoint: fp.endpoint, line, column, span: callInfo.span, frequency, loopContext: inLoop,
         enclosingFunction: fnName,
-        streaming: fp.streaming, batchCapable: fp.batchCapable, cacheCapable: fp.cacheCapable,
+        streaming: fp.streaming, batchCapable: fp.batchCapable, inlineParallelCapable: fp.inlineParallelCapable, cacheCapable: fp.cacheCapable,
       });
     } else {
       matches.push({ kind: "sdk", provider, packageName, methodChain, confidence: provider ? 0.7 : 0.1, line, column, span: callInfo.span, frequency, loopContext: inLoop, enclosingFunction: fnName });
@@ -823,7 +824,7 @@ export async function scanSourceWithAst(
         ? { kind: "sdk", provider, packageName, methodChain, confidence: 1.0, method: fp.httpMethod,
             endpoint: fp.endpoint, line, column, span: callInfo.span, frequency: "single", loopContext: false,
             enclosingFunction: fnName2,
-            streaming: fp.streaming, batchCapable: fp.batchCapable, cacheCapable: fp.cacheCapable }
+            streaming: fp.streaming, batchCapable: fp.batchCapable, inlineParallelCapable: fp.inlineParallelCapable, cacheCapable: fp.cacheCapable }
         : { kind: "sdk", provider, packageName, methodChain, confidence: provider ? 0.7 : 0.1,
             line, column, span: callInfo.span, frequency: "single", loopContext: false, enclosingFunction: fnName2 }
       );
