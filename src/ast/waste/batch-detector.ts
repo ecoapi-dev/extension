@@ -288,6 +288,7 @@ function detectInlineParallel(
   if (match.frequency === "unbounded-loop") score += 3;
   else if (match.frequency === "bounded-loop") score += 2;
   else if (match.frequency === "parallel") score += 2;
+  // polling is excluded by the BATCH_LOOP_FREQS guard above; branch kept for parity with detectBatch
   else if (match.frequency === "polling") score += 4;
   if (small) score -= 1;
   if (isTestLike) score -= 1;
