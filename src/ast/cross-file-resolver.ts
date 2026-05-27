@@ -679,7 +679,8 @@ function extractFactoryCallAssignments(source: string): Map<string, string> {
   const result = new Map<string, string>();
   // const/let/var varName = factoryFnName()
   // Also handles: const varName = factoryFnName<T>()
-  const RE = /(?:const|let|var)\s+(\w+)\s*=\s*(\w+)\s*(?:<[^>]*>)?\s*\(\s*\)/gm;
+  // Also handles calls with arguments: factoryFnName(arg1, arg2) or multi-line
+  const RE = /(?:const|let|var)\s+(\w+)\s*=\s*(\w+)\s*(?:<[^>]*>)?\s*\(\s*[^)]*\)/gm;
   let m: RegExpExecArray | null;
   while ((m = RE.exec(source)) !== null) {
     result.set(m[1], m[2]);
