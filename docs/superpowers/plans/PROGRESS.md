@@ -130,22 +130,24 @@ Two trackers in one file:
 
 Post-foundation work organized into 10 waves + 2 standalones, tracked via `wave/*` + `area/*` GitHub labels. **Execution order is severity-weighted** (platform issues outrank accuracy): Wave 9 → 6 → 7 → 8 → 10 → standalones → accuracy waves (5 → 3 → 1 → 2 → 4).
 
+**As of 2026-05-27:** all platform waves (6–10) are SHIPPED, plus accuracy Wave 3. Remaining open work: accuracy waves **5 → 1 → 2 → 4** + standalones #45/#52.
+
 ## Overall Wave Status
 
 | Wave | Topic | Issues | Status | Notes |
 |---|---|---|---|---|
 | **9** | Local-mode IPC architecture | #91, #99 | 🟢 | Closed docs-only via PR #120. Decision: extension does not host WS server; SDKs move to NDJSON file transport. |
 | **6** | Scan submission fidelity | #95, #96 | 🟢 | Both halves shipped: `recost-dev/api#40` (span persistence) + `extension#121` (unknown-provider retention). |
-| **7** | Cost/simulator consistency | #92, #93 | 🟡 | PR [#122](https://github.com/recost-dev/extension/pull/122) OPEN. Labels extension numbers as estimates; doesn't reconcile constants. Worktree `../extension-wave7`. |
-| **8** | Status/error UX | #46, #94, #100 | ⬜ | Next up per severity-weighted order. #94 is HIGH (validateRcApiKey 404 treated as valid). |
-| **10** | Config hygiene | #97, #98 | ⬜ | Low/Medium severity. |
+| **7** | Cost/simulator consistency | #92, #93 | 🟢 | Shipped via PR [#122](https://github.com/recost-dev/extension/pull/122). Labels extension numbers as estimates; doesn't reconcile constants. |
+| **8** | Status/error UX | #46, #94, #100 | 🟢 | Shipped via PR [#123](https://github.com/recost-dev/extension/pull/123). |
+| **10** | Config hygiene | #97, #98 | 🟢 | Shipped via PR [#124](https://github.com/recost-dev/extension/pull/124). |
 | — | Standalone #45 | #45 | ⬜ | Opt-in Project ID persistence — independent feature. |
 | — | Standalone #52 | #52 | ⬜ | Dashboard theming — can defer indefinitely. |
-| **5** | Housekeeping (accuracy) | #118, #119 | ⬜ | Cheapest accuracy work. |
-| **3** | Resolver follow-ups (accuracy) | #114, #115, #116 | ⬜ | Low-risk recall wins. |
+| **5** | Housekeeping (accuracy) | #118, #119 | ⬜ | Cheapest accuracy work. Both in-repo (benchmark runner + `benchmark.yml`). |
+| **3** | Resolver follow-ups (accuracy) | #114, #115, #116 | 🟢 | Shipped via PR [#126](https://github.com/recost-dev/extension/pull/126). Follow-ups #127 (detection threading) + #128 (dashboard badge). |
 | **1** | Findings quality (accuracy) | #84, #85, #112 | ⬜ | User-facing. |
 | **2** | Traceability (accuracy) | #81, #113 | ⬜ | Corpus expansion + dual locations. |
-| **4** | Recall recovery (accuracy) | #117 | ⬜ | Risky — depends on Wave 3 (#116). |
+| **4** | Recall recovery (accuracy) | #117 | ⬜ | Risky — depended on Wave 3 (#116), now unblocked. |
 
 ## Wave 9 — Local-mode IPC architecture (CLOSED)
 
@@ -165,39 +167,43 @@ Post-foundation work organized into 10 waves + 2 standalones, tracked via `wave/
 
 **Latent bug surfaced (not yet filed):** `detectEndpointProvider(url)` in `src/scanner/endpoint-classification.ts:59` returns hostname-as-fallback instead of `undefined`, making `provider ?? detectEndpointProvider(url) ?? "unknown"` patterns have dead `?? "unknown"` branches everywhere. See `memory/wave6_status.md`.
 
-## Wave 7 — Cost/simulator consistency (IN REVIEW)
+## Wave 7 — Cost/simulator consistency (SHIPPED)
 
 | Issue | Status |
 |---|---|
-| #92 — pricing sync may not flow into local cost estimation | 🟡 PR #122 (closes on merge) |
-| #93 — frequency-class multipliers diverge | 🟡 PR #122 (closes on merge) |
+| #92 — pricing sync may not flow into local cost estimation | 🟢 Closed by PR #122 |
+| #93 — frequency-class multipliers diverge | 🟢 Closed by PR #122 |
 
-**Framing:** Two layers compute cost — authoritative (API + telemetry) and heuristic (extension static scan). Reconciliation was rejected; PR adds labeling + code comments + CLAUDE.md section saying these are intentionally divergent.
+**Framing:** Two layers compute cost — authoritative (API + telemetry) and heuristic (extension static scan). Reconciliation was rejected; PR added labeling + code comments + CLAUDE.md section saying these are intentionally divergent.
 
-**Spec:** `docs/superpowers/specs/2026-05-21-wave7-cost-simulator-consistency-design.md`
-**Plan:** `docs/superpowers/plans/2026-05-21-wave7-cost-simulator-consistency.md`
-**Branch / worktree:** `wave7/cost-simulator-labeling` at `../extension-wave7`
+## Wave 8 — Status/error UX (SHIPPED)
 
-**Gates:** build clean, 4/4 tests pass, D1 benchmark Δ +0.00pp on all 5 metrics.
-
-**Post-merge follow-ups:** EDH smoke-test (3 boxes in PR test plan); post explanatory closure comments on #92/#93 from plan Task 9 Step 3.
-
-## Wave 8 — Status/error UX (NOT STARTED)
-
-| Issue | Severity |
+| Issue | Status |
 |---|---|
-| #46 — valid-key indicator finicky | bug |
-| #94 — `validateRcApiKey()` treats 404 as "valid in dev mode" | HIGH |
-| #100 — 429 not surfaced distinctly in extension UI | bug |
+| #46 — valid-key indicator finicky | 🟢 Closed by PR #123 |
+| #94 — `validateRcApiKey()` treats 404 as "valid in dev mode" (HIGH) | 🟢 Closed by PR #123 |
+| #100 — 429 not surfaced distinctly in extension UI | 🟢 Closed by PR #123 |
 
-Next wave per severity order. Brainstorm first. `area/extension-ux`.
+## Wave 10 — Config hygiene (SHIPPED)
 
-## Wave 10 — Config hygiene (NOT STARTED)
-
-| Issue | Severity |
+| Issue | Status |
 |---|---|
-| #97 — hard-coded base URLs scattered | Low/Med |
-| #98 — `local-${Date.now()}` scanId 1ms collision | Low |
+| #97 — hard-coded base URLs scattered | 🟢 Closed by PR #124 |
+| #98 — `local-${Date.now()}` scanId 1ms collision | 🟢 Closed by PR #124 |
+
+## Wave 3 — Resolver follow-ups (SHIPPED)
+
+| Issue | Status |
+|---|---|
+| #114 — A3 default-import context threading in `resolveExportedMatches` | 🟢 Closed by PR #126 |
+| #115 — A5 factory-with-arguments in `extractFactoryCallAssignments` | 🟢 Closed by PR #126 |
+| #116 — narrow `images.generate` to `inlineParallelCapable` flag | 🟢 Closed by PR #126 |
+
+**Build:** subagent-driven across two file-disjoint parallel worktree tracks (resolver #114/#115 · detector #116), per-track spec + code-quality review, final whole-impl review (READY TO MERGE). Gates: full `test:scanner` green (4 new tests), `build:ext` clean, benchmark Δ +0.00pp on all 5 metrics.
+
+**Spec/Plan:** `docs/superpowers/specs/2026-05-27-wave3-resolver-followups-design.md` · `docs/superpowers/plans/2026-05-27-wave3-resolver-followups.md`
+
+**Post-merge follow-ups:** #127 (thread `inlineParallelCapable` through regex pattern path + dedup + intelligence graph), #128 (dashboard endpoint badge — restores indicator DALL·E lost when reclassified off `batchCapable`).
 
 ## Accuracy waves (deprioritized vs platform)
 
@@ -226,6 +232,7 @@ Next wave per severity order. Brainstorm first. `area/extension-ux`.
 
 > Append `YYYY-MM-DD HH:MM — <one-line update>`. Newest at top.
 
+- 2026-05-27 — **Wave 3 shipped (PR #126)** — #114/#115/#116 closed. Subagent-driven across 2 parallel worktree tracks; gates green (test:scanner, build:ext, benchmark Δ +0.00pp). Follow-ups filed: #127 (detection threading) + #128 (dashboard badge). **Tracker reconciliation:** also corrected stale statuses — Waves 7 (PR #122), 8 (PR #123), and 10 (PR #124) had merged earlier but were never marked 🟢 here. All platform waves (6–10) now confirmed shipped; remaining work is accuracy waves 5→1→2→4 + standalones.
 - 2026-05-21 — **Wave 7 PR opened (#122).** Closes #92 + #93 as design-resolved via labeling, not reconciliation. 7 commits on `wave7/cost-simulator-labeling` (worktree `../extension-wave7`): shared `EstimateDisclaimer` component, render on Simulate tab, code comments on `LOCAL_PRICING` + `FREQUENCY_CLASS_MULTIPLIERS`, CLAUDE.md "Cost numbers: heuristic vs authoritative" section. All gates green (build, 4/4 tests, D1 Δ +0.00pp). Spec + plan committed to main. Wave 8 (#46/#94/#100) is next per severity order.
 - 2026-05-15 — **Wave 9 closed docs-only via PR #120**, **Wave 6 shipped** (api#40 + extension#121). Both detailed in `memory/wave9_local_mode_resolution.md` and `memory/wave6_status.md`.
 - 2026-05-13 to 2026-05-15 — **C1 calibration shipped** across PRs #106 (per-detector measurement) → #108 (cache tightening) → #109 (batch tightening) → #110 (A3/A5 resolver recall) → #111 (rate_limit + residual batch). Finding precision 9.09% → 100%, recall held. Closes #83.
