@@ -30,6 +30,23 @@ export interface FindingTypeMetrics extends FindingTypeCounts {
   recall: number;
 }
 
+/**
+ * Return a copy of `byType` with keys inserted in alphabetical (by-name) order.
+ * Used when writing `baseline.json` so committed diffs are stable: the metrics
+ * builder inserts keys in fixture-iteration order, and the display sort
+ * (`sortedTypeEntries`) orders by precision — either would reshuffle the keys
+ * across runs. Sorting by name keeps the committed file deterministic.
+ */
+export function sortFindingMetricsByType(
+  byType: Record<string, FindingTypeMetrics>
+): Record<string, FindingTypeMetrics> {
+  const sorted: Record<string, FindingTypeMetrics> = {};
+  for (const key of Object.keys(byType).sort((a, b) => a.localeCompare(b))) {
+    sorted[key] = byType[key];
+  }
+  return sorted;
+}
+
 export interface MetricsReport {
   detectionPrecision: number;
   detectionRecall: number;
