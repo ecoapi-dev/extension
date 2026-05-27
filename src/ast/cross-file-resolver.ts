@@ -373,7 +373,7 @@ function resolveExportedMatches(
 ): AstCallMatch[] | null {
   if (depth > 2) return null;
 
-  const visitKey = `${fromFile}::${name}`;
+  const visitKey = `${fromFile}::${isDefault ? "default" : name}`;
   if (visited.has(visitKey)) return null;
   visited.add(visitKey);
 
@@ -680,6 +680,9 @@ function extractFactoryCallAssignments(source: string): Map<string, string> {
   // const/let/var varName = factoryFnName()
   // Also handles: const varName = factoryFnName<T>()
   // Also handles calls with arguments: factoryFnName(arg1, arg2) or multi-line
+  // `[^)]*` matches any single-level argument list (incl. multi-line); it stops at
+  // the first `)`, which still captures the var + factory names correctly even when
+  // an argument itself contains parens, e.g. makeClient(getConfig()).
   const RE = /(?:const|let|var)\s+(\w+)\s*=\s*(\w+)\s*(?:<[^>]*>)?\s*\(\s*[^)]*\)/gm;
   let m: RegExpExecArray | null;
   while ((m = RE.exec(source)) !== null) {

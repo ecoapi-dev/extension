@@ -27,7 +27,7 @@ function buildFixtureAccess(fixtureDir: string): ScanFileAccess {
     const consumerCalls = calls.filter((c) => c.file.endsWith("consumer.ts") && c.provider === "openai");
     assert.ok(
       consumerCalls.length >= 5,
-      `expected >=5 openai calls (one per factory variant), got ${consumerCalls.length}: ${JSON.stringify(consumerCalls.map((c) => ({ line: c.line, provider: c.provider })))}`
+      `expected >=5 openai calls (one per assigned client), got ${consumerCalls.length}: ${JSON.stringify(consumerCalls.map((c) => ({ line: c.line, provider: c.provider })))}`
     );
   });
 })().catch((err) => { console.error(err); process.exit(1); });
