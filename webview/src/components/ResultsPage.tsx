@@ -675,34 +675,36 @@ export function ResultsPage({
               </div>
             ) : (
               <>
-                {presentTypes.length > 1 && (
-                  <div style={{ padding: "5px 12px", borderBottom: "1px solid var(--vscode-panel-border)", display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ fontSize: "10px", color: "var(--vscode-descriptionForeground)", flexShrink: 0 }}>Type</span>
-                    <select
-                      className="eco-input"
-                      style={{ fontSize: "10px", padding: "2px 6px", height: "22px" }}
-                      value={typeFilter}
-                      onChange={(e) => setTypeFilter(e.target.value)}
-                    >
-                      <option value="all">All ({suggestions.length})</option>
-                      {presentTypes.map((t) => (
-                        <option key={t} value={t}>{t} ({suggestions.filter((s) => s.type === t).length})</option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label="Minimum confidence"
-                      className="eco-input"
-                      style={{ fontSize: "10px", padding: "2px 6px", height: "22px" }}
-                      value={minConfidence}
-                      onChange={(e) => setMinConfidence(Number(e.target.value))}
-                    >
-                      <option value={0}>Any confidence</option>
-                      <option value={0.4}>≥ 40%</option>
-                      <option value={0.6}>≥ 60%</option>
-                      <option value={0.8}>≥ 80%</option>
-                    </select>
-                  </div>
-                )}
+                <div style={{ padding: "5px 12px", borderBottom: "1px solid var(--vscode-panel-border)", display: "flex", alignItems: "center", gap: "6px" }}>
+                  {presentTypes.length > 1 && (
+                    <>
+                      <span style={{ fontSize: "10px", color: "var(--vscode-descriptionForeground)", flexShrink: 0 }}>Type</span>
+                      <select
+                        className="eco-input"
+                        style={{ fontSize: "10px", padding: "2px 6px", height: "22px" }}
+                        value={typeFilter}
+                        onChange={(e) => setTypeFilter(e.target.value)}
+                      >
+                        <option value="all">All ({suggestions.length})</option>
+                        {presentTypes.map((t) => (
+                          <option key={t} value={t}>{t} ({suggestions.filter((s) => s.type === t).length})</option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                  <select
+                    aria-label="Minimum confidence"
+                    className="eco-input"
+                    style={{ fontSize: "10px", padding: "2px 6px", height: "22px" }}
+                    value={minConfidence}
+                    onChange={(e) => setMinConfidence(Number(e.target.value))}
+                  >
+                    <option value={0}>Any confidence</option>
+                    <option value={0.4}>≥ 40%</option>
+                    <option value={0.6}>≥ 60%</option>
+                    <option value={0.8}>≥ 80%</option>
+                  </select>
+                </div>
                 {(() => {
                   const paidIssues = visibleSuggestions.filter((s) => s.pricingClass === "paid");
                   const freeIssues = visibleSuggestions.filter((s) => s.pricingClass === "free");
