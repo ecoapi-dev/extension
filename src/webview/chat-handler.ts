@@ -4,7 +4,7 @@ import type { PersistedKeyValidationSnapshot } from "../key-management";
 import type { EndpointRecord, Suggestion, ScanSummary } from "../analysis/types";
 import { buildSystemPrompt } from "../chat/prompts";
 import { readWorkspaceFileExcerpt } from "../scanner/workspace-scanner";
-import { classifyPricing, calculateSavings, deriveSeverity, computeCostImpact, SEVERITY_TO_RISK_SCORE } from "../scan-results";
+import { classifyPricing, calculateSavings, deriveSeverity, computeCostImpact, SEVERITY_TO_RISK_SCORE, collapseSuggestions } from "../scan-results";
 import { buildKeyFingerprint } from "../key-management";
 import {
   buildProviderOptions,
@@ -20,10 +20,6 @@ import { newLocalScanId } from "../scan-id";
 // Local copies of small pure helpers used here. Avoid importing from
 // webview-provider.ts to prevent a circular import. Originals remain in
 // webview-provider.ts where non-chat code also uses them.
-function normalizeDescription(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-}
-
 function trimText(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}...`;
 }
@@ -459,48 +455,12 @@ export class ChatHandler {
   }
 
   private mergeAiSuggestions(existing: Suggestion[], incoming: Suggestion[]): { merged: Suggestion[]; added: number; filtered: number } {
-    const existingByKey = new Set<string>();
-    const deterministicOverlap = new Map<string, number[]>();
-
-    for (const suggestion of existing) {
-      const file = suggestion.affectedFiles[0] ?? "";
-      const line = suggestion.targetLine ?? 0;
-      const key = `${suggestion.type}|${file}|${line}|${normalizeDescription(suggestion.description)}`;
-      existingByKey.add(key);
-      if (file && suggestion.source !== "ai") {
-        const overlapKey = `${suggestion.type}|${file}`;
-        const lines = deterministicOverlap.get(overlapKey) ?? [];
-        lines.push(line);
-        deterministicOverlap.set(overlapKey, lines);
-      }
-    }
-
-    const aiByKey = new Set<string>();
-    const accepted: Suggestion[] = [];
-    let filtered = 0;
-
-    for (const suggestion of incoming) {
-      const file = suggestion.affectedFiles[0] ?? "";
-      const line = suggestion.targetLine ?? 0;
-      const key = `${suggestion.type}|${file}|${line}|${normalizeDescription(suggestion.description)}`;
-      if (existingByKey.has(key) || aiByKey.has(key)) {
-        filtered += 1;
-        continue;
-      }
-
-      const overlapKey = `${suggestion.type}|${file}`;
-      const overlapLines = deterministicOverlap.get(overlapKey) ?? [];
-      const nearDeterministic = overlapLines.some((knownLine) => Math.abs(knownLine - line) <= 5);
-      if (nearDeterministic) {
-        filtered += 1;
-        continue;
-      }
-
-      aiByKey.add(key);
-      accepted.push(suggestion);
-    }
-
-    return { merged: [...existing, ...accepted], added: accepted.length, filtered };
+    const collapsed = collapseSuggestions([...existing, ...incoming]);
+    // "added" = net new distinct findings the AI pass contributed;
+    // "filtered" = AI findings that collapsed into an existing one.
+    const added = collapsed.length - existing.length;
+    const filtered = incoming.length - added;
+    return { merged: collapsed, added: Math.max(0, added), filtered: Math.max(0, filtered) };
   }
 
   public async handleRunAiReview() {
