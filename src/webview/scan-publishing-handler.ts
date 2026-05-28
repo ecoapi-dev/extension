@@ -10,7 +10,7 @@ import type { HostMessage, KeyServiceId } from "../messages";
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "../analysis/types";
 import { classifyEndpointScope, detectEndpointProvider } from "../scanner/endpoint-classification";
 import { computeEndpointId } from "../scanner/endpoint-id";
-import { classifyPricing, calculateSavings, deriveSeverity, computeCostImpact, SEVERITY_TO_RISK_SCORE } from "../scan-results";
+import { classifyPricing, calculateSavings, deriveSeverity, computeCostImpact, SEVERITY_TO_RISK_SCORE, collapseSuggestions } from "../scan-results";
 import { buildSnapshot } from "../intelligence/builder";
 import { scoreSnapshot } from "../intelligence/scorer";
 import { estimateLocalMonthlyCost } from "../intelligence/cost-utils";
@@ -610,12 +610,14 @@ export class ScanPublishingHandler {
       const publishLocalOnlyResults = (localProjectId: string, localScanId: string) => {
         const endpoints = mergeRemoteAndLocalEndpoints([], apiCalls, localProjectId, localScanId);
         const aggressiveSuggestions = buildAggressiveSuggestions(endpoints, [], localWasteFindings);
-        const mergedSuggestions = mergeLocalWasteFindings(
-          aggressiveSuggestions,
-          localWasteFindings,
-          endpoints,
-          localProjectId,
-          localScanId
+        const mergedSuggestions = collapseSuggestions(
+          mergeLocalWasteFindings(
+            aggressiveSuggestions,
+            localWasteFindings,
+            endpoints,
+            localProjectId,
+            localScanId
+          )
         );
         const summary: ScanSummary = {
           totalEndpoints: endpoints.length,
@@ -753,12 +755,14 @@ export class ScanPublishingHandler {
         this.ctx.setLastEndpoints(externalEndpoints);
         void this.ctx.pruneSavedScenariosAgainst(externalEndpoints);
         const aggressiveSuggestions = buildAggressiveSuggestions(endpoints, taggedRemoteSuggestions, localWasteFindings);
-        const mergedSuggestions = mergeLocalWasteFindings(
-          aggressiveSuggestions,
-          localWasteFindings,
-          endpoints,
-          projectId,
-          scanResult.scanId
+        const mergedSuggestions = collapseSuggestions(
+          mergeLocalWasteFindings(
+            aggressiveSuggestions,
+            localWasteFindings,
+            endpoints,
+            projectId,
+            scanResult.scanId
+          )
         );
         this.ctx.setLastSuggestions(mergedSuggestions);
         this.ctx.setLastSummary({ ...scanResult.summary, totalEndpoints: externalEndpoints.length });
