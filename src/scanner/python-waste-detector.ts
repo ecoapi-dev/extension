@@ -169,6 +169,7 @@ function makeFinding(
     type,
     severity: scoreToSeverity(score),
     confidence: clampConfidence(confidence),
+    riskScore: score,
     description,
     affectedFile: filePath,
     line,

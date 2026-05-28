@@ -36,6 +36,9 @@ export interface LocalWasteFinding {
   type: SuggestionType;
   severity: Severity;
   confidence: number;
+  /** Structural risk score from the detector (pre-cost). Feeds deriveSeverity(); the
+   *  `severity` field is now provisional/structural and overridden at Suggestion build. */
+  riskScore: number;
   description: string;
   affectedFile: string;
   line?: number;
@@ -244,6 +247,7 @@ function makeFinding(
     type,
     severity: scoreToSeverity(score),
     confidence,
+    riskScore: score,
     description,
     affectedFile: relativePath,
     line,

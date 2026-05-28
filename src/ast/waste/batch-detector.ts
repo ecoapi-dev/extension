@@ -134,6 +134,7 @@ function detectBatch(
     id: `local-batch-${filePath}:${match.line}`,
     type: "batch" as SuggestionType,
     severity: scoreToSeverity(score),
+    riskScore: score,
     confidence,
     description:
       "Batch-capable API call executes inside a loop — consolidate into a single batch request.",
@@ -187,6 +188,7 @@ function detectNPlusOne(
     id: `local-n_plus_one-${filePath}:${match.line}`,
     type: "n_plus_one" as SuggestionType,
     severity: scoreToSeverity(score),
+    riskScore: score,
     confidence,
     description:
       "Loop-driven individual API requests scale linearly with collection size — consider batching or restructuring.",
@@ -248,6 +250,7 @@ function detectSequential(
       id: `local-batch-seq-${filePath}:${firstMatch.line}`,
       type: "batch" as SuggestionType,
       severity: scoreToSeverity(score),
+      riskScore: score,
       confidence,
       description: `${uniqueLines.size} sequential ${provider} calls could be fired in parallel with Promise.all to reduce total latency.`,
       affectedFile: filePath,
@@ -303,6 +306,7 @@ function detectInlineParallel(
     id: `local-inline_parallel-${filePath}:${match.line}`,
     type: "batch" as SuggestionType,
     severity: scoreToSeverity(score),
+    riskScore: score,
     confidence,
     description:
       "This endpoint accepts an n/count parameter — request multiple results in a single call instead of issuing one request per item.",
