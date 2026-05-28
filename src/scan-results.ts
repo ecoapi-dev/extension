@@ -102,6 +102,66 @@ export function deriveSeverity(signals: SeveritySignals): Severity {
  *  deriveSeverity thresholds: high >= 5, medium >= 3, low < 3. */
 export const SEVERITY_TO_RISK_SCORE: Record<Severity, number> = { high: 5, medium: 3, low: 1 };
 
+function suggestionMergeKey(s: Suggestion): string {
+  const file = s.affectedFiles[0] ?? "";
+  const endpoint = s.affectedEndpoints[0];
+  const locationBucket = endpoint ?? `L${Math.floor((s.targetLine ?? 0) / 5)}`;
+  return `${s.type}::${file}::${locationBucket}`;
+}
+
+const SOURCE_DESCRIPTION_RANK: Record<string, number> = { ai: 3, remote: 2, "local-rule": 1 };
+
+function sourcesOf(s: Suggestion): string[] {
+  if (s.sources && s.sources.length > 0) return s.sources;
+  return s.source ? [s.source] : [];
+}
+
+/**
+ * #84: collapse findings that describe the same issue at the same location into one.
+ * - dedupe key: type | file | endpointId (or 5-line bucket when no endpoint)
+ * - sources: union of both findings' sources
+ * - confidence: max()
+ * - description/evidence: from the highest-ranked source (ai > remote > local-rule)
+ * - severity: recomputed from merged signals (max severity floor, max confidence, max cost)
+ */
+export function collapseSuggestions(suggestions: Suggestion[]): Suggestion[] {
+  const byKey = new Map<string, Suggestion>();
+  for (const incoming of suggestions) {
+    const key = suggestionMergeKey(incoming);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { ...incoming, sources: [...new Set(sourcesOf(incoming))] });
+      continue;
+    }
+
+    const mergedSources = [...new Set([...sourcesOf(existing), ...sourcesOf(incoming)])];
+    const confidence = Math.max(existing.confidence ?? 0, incoming.confidence ?? 0);
+    const costImpactUsd = Math.max(existing.costImpactUsd ?? 0, incoming.costImpactUsd ?? 0) || null;
+    const rank = (s: Suggestion) => SOURCE_DESCRIPTION_RANK[s.source ?? ""] ?? 0;
+    const descSource = rank(incoming) > rank(existing) ? incoming : existing;
+    const riskScore = SEVERITY_TO_RISK_SCORE[
+      ([existing.severity, incoming.severity].includes("high")
+        ? "high"
+        : [existing.severity, incoming.severity].includes("medium")
+        ? "medium"
+        : "low") as Severity
+    ];
+    const severity = deriveSeverity({ riskScore, confidence, costImpactUsd });
+
+    byKey.set(key, {
+      ...existing,
+      sources: mergedSources,
+      confidence,
+      costImpactUsd,
+      description: descSource.description,
+      evidence: descSource.evidence ?? existing.evidence,
+      severity,
+      estimatedMonthlySavings: Math.max(existing.estimatedMonthlySavings, incoming.estimatedMonthlySavings),
+    });
+  }
+  return [...byKey.values()];
+}
+
 const FREQUENCY_SEVERITY: Record<string, number> = {
   polling: 6,
   "unbounded-loop": 5,
