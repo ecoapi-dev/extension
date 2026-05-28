@@ -130,6 +130,7 @@ function detectPolling(
     id: `local-rate_limit-poll-${filePath}:${match.line}`,
     type: "rate_limit" as SuggestionType,
     severity: scoreToSeverity(score),
+    riskScore: score,
     confidence,
     description:
       "API call inside a polling timer without exponential backoff risks hitting provider rate limits.",
@@ -175,6 +176,7 @@ function detectUnboundedConcurrency(
     id: `local-concurrency_control-${filePath}:${match.line}`,
     type: "concurrency_control" as SuggestionType,
     severity: scoreToSeverity(score),
+    riskScore: score,
     confidence,
     description:
       "Unbounded parallel API fan-out without a concurrency limiter risks saturating provider rate limits.",
@@ -222,6 +224,7 @@ function detectRetryStorm(
     id: `local-rate_limit-retry-${filePath}:${match.line}`,
     type: "rate_limit" as SuggestionType,
     severity: scoreToSeverity(score),
+    riskScore: score,
     confidence,
     description:
       "Retry logic near an API call lacks backoff — immediate retries can cascade into a rate limit storm.",
@@ -266,6 +269,7 @@ function detectEventAmplification(
     id: `local-rate_limit-event-${filePath}:${match.line}`,
     type: "rate_limit" as SuggestionType,
     severity: scoreToSeverity(score),
+    riskScore: score,
     confidence,
     description:
       "API call inside a high-frequency event handler without debouncing or throttling.",

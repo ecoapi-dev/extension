@@ -244,6 +244,7 @@ export function detectCacheWaste(
       id: `local-cache-${filePath}:${match.line}`,
       type: "cache" as SuggestionType,
       severity: scoreToSeverity(score),
+      riskScore: score,
       confidence,
       description:
         "Read-like API call appears without nearby caching or request-dedup safeguards.",

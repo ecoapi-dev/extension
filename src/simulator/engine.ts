@@ -13,7 +13,7 @@ import { UNCERTAINTY_FACTOR } from "./types";
 // API computes absolute calls/day from runtime telemetry; the simulator applies
 // relative scaling to user inputs. Both are correct for their context; do not
 // reconcile. See CLAUDE.md "Cost numbers: heuristic vs authoritative."
-const FREQUENCY_CLASS_MULTIPLIERS: Record<string, number> = {
+export const FREQUENCY_CLASS_MULTIPLIERS: Record<string, number> = {
   "unbounded-loop": 10,
   "polling": 8,
   "parallel": 3,

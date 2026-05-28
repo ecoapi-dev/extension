@@ -10,7 +10,7 @@ import type { HostMessage, KeyServiceId } from "../messages";
 import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "../analysis/types";
 import { classifyEndpointScope, detectEndpointProvider } from "../scanner/endpoint-classification";
 import { computeEndpointId } from "../scanner/endpoint-id";
-import { classifyPricing, calculateSavings } from "../scan-results";
+import { classifyPricing, calculateSavings, deriveSeverity, computeCostImpact, SEVERITY_TO_RISK_SCORE, collapseSuggestions } from "../scan-results";
 import { buildSnapshot } from "../intelligence/builder";
 import { scoreSnapshot } from "../intelligence/scorer";
 import { estimateLocalMonthlyCost } from "../intelligence/cost-utils";
@@ -176,7 +176,13 @@ function buildAggressiveSuggestions(
     );
     if (suppressedByWaste) continue;
 
-    const severity = chooseSeverity(endpoint.status, endpoint.monthlyCost);
+    const confidence = confidenceFromEndpointStatus(endpoint);
+    const costImpactUsd = computeCostImpact(endpoint.monthlyCost, endpoint.frequencyClass);
+    const severity = deriveSeverity({
+      riskScore: SEVERITY_TO_RISK_SCORE[chooseSeverity(endpoint.status, endpoint.monthlyCost)],
+      confidence,
+      costImpactUsd,
+    });
     extras.push({
       id: `local-${endpoint.id}-${type}`,
       projectId: endpoint.projectId,
@@ -189,9 +195,11 @@ function buildAggressiveSuggestions(
       description: buildAggressiveDescription(endpoint, type),
       codeFix: "",
       source: "local-rule",
-      confidence: confidenceFromEndpointStatus(endpoint),
+      sources: ["local-rule"],
+      confidence,
       evidence: endpoint.callSites.slice(0, 3).map((site) => `Observed callsite: ${site.file}:${site.line}`),
       pricingClass: classifyPricing([endpoint.costModel]),
+      costImpactUsd,
     });
   }
 
@@ -253,15 +261,22 @@ function mergeLocalWasteFindings(
       : fileMonthlyCost > 0
       ? fileMonthlyCost
       : 0;
-    const estimatedMonthlySavings = calculateSavings(finding.type, finding.severity, baselineCost);
     const pricingClass = classifyPricing(fileEndpoints.map((ep) => ep.costModel));
+    // Heuristic: prefer the nearest endpoint's frequency class; fall back to any
+    // classed endpoint in the file. In multi-endpoint files this can over/under-state
+    // cost impact, which may shift severity by one tier (never adds/drops a finding).
+    const frequencyClass = closestEndpoint?.frequencyClass
+      ?? fileEndpoints.find((ep) => ep.frequencyClass)?.frequencyClass;
+    const costImpactUsd = computeCostImpact(baselineCost, frequencyClass);
+    const severity = deriveSeverity({ riskScore: finding.riskScore, confidence: finding.confidence, costImpactUsd });
+    const estimatedMonthlySavings = calculateSavings(finding.type, severity, baselineCost);
 
     locals.push({
       id: finding.id,
       projectId,
       scanId,
       type: finding.type,
-      severity: finding.severity,
+      severity,
       affectedEndpoints: fileEndpoints.map((ep) => ep.id),
       affectedFiles: [finding.affectedFile],
       targetLine: finding.line,
@@ -269,9 +284,11 @@ function mergeLocalWasteFindings(
       description: finding.description,
       codeFix: "",
       source: "local-rule",
+      sources: ["local-rule"],
       confidence: finding.confidence,
       evidence: finding.evidence,
       pricingClass,
+      costImpactUsd,
     });
   }
 
@@ -593,12 +610,14 @@ export class ScanPublishingHandler {
       const publishLocalOnlyResults = (localProjectId: string, localScanId: string) => {
         const endpoints = mergeRemoteAndLocalEndpoints([], apiCalls, localProjectId, localScanId);
         const aggressiveSuggestions = buildAggressiveSuggestions(endpoints, [], localWasteFindings);
-        const mergedSuggestions = mergeLocalWasteFindings(
-          aggressiveSuggestions,
-          localWasteFindings,
-          endpoints,
-          localProjectId,
-          localScanId
+        const mergedSuggestions = collapseSuggestions(
+          mergeLocalWasteFindings(
+            aggressiveSuggestions,
+            localWasteFindings,
+            endpoints,
+            localProjectId,
+            localScanId
+          )
         );
         const summary: ScanSummary = {
           totalEndpoints: endpoints.length,
@@ -725,19 +744,25 @@ export class ScanPublishingHandler {
           getAllEndpoints(projectId, scanResult.scanId, rcApiKey),
           getAllSuggestions(projectId, scanResult.scanId, rcApiKey),
         ]);
-        const taggedRemoteSuggestions = suggestions.map((s) => ({ ...s, source: s.source ?? "remote" }));
+        const taggedRemoteSuggestions = suggestions.map((s) => ({
+          ...s,
+          source: s.source ?? "remote",
+          sources: s.sources ?? ["remote"],
+        }));
 
         const endpoints = mergeRemoteAndLocalEndpoints(remoteEndpoints, apiCalls, projectId, scanResult.scanId);
         const externalEndpoints = endpoints.filter((ep) => ep.scope !== "internal");
         this.ctx.setLastEndpoints(externalEndpoints);
         void this.ctx.pruneSavedScenariosAgainst(externalEndpoints);
         const aggressiveSuggestions = buildAggressiveSuggestions(endpoints, taggedRemoteSuggestions, localWasteFindings);
-        const mergedSuggestions = mergeLocalWasteFindings(
-          aggressiveSuggestions,
-          localWasteFindings,
-          endpoints,
-          projectId,
-          scanResult.scanId
+        const mergedSuggestions = collapseSuggestions(
+          mergeLocalWasteFindings(
+            aggressiveSuggestions,
+            localWasteFindings,
+            endpoints,
+            projectId,
+            scanResult.scanId
+          )
         );
         this.ctx.setLastSuggestions(mergedSuggestions);
         this.ctx.setLastSummary({ ...scanResult.summary, totalEndpoints: externalEndpoints.length });
