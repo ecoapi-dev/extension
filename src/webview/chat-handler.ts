@@ -458,6 +458,9 @@ export class ChatHandler {
     const collapsed = collapseSuggestions([...existing, ...incoming]);
     // "added" = net new distinct findings the AI pass contributed;
     // "filtered" = AI findings that collapsed into an existing one.
+    // These counts are cosmetic (logged + sent in aiReviewComplete). If `existing`
+    // somehow held duplicates (shouldn't post-scan-collapse), `added` could go
+    // negative — the Math.max(0, ...) clamps below keep the reported numbers sane.
     const added = collapsed.length - existing.length;
     const filtered = incoming.length - added;
     return { merged: collapsed, added: Math.max(0, added), filtered: Math.max(0, filtered) };

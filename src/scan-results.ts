@@ -105,6 +105,9 @@ export const SEVERITY_TO_RISK_SCORE: Record<Severity, number> = { high: 5, mediu
 function suggestionMergeKey(s: Suggestion): string {
   const file = s.affectedFiles[0] ?? "";
   const endpoint = s.affectedEndpoints[0];
+  // When no endpoint or line is known, all same-type findings in the file share
+  // bucket L0 and collapse into one — acceptable for this file-level fallback;
+  // real call sites always carry a line number.
   const locationBucket = endpoint ?? `L${Math.floor((s.targetLine ?? 0) / 5)}`;
   return `${s.type}::${file}::${locationBucket}`;
 }
@@ -123,6 +126,10 @@ function sourcesOf(s: Suggestion): string[] {
  * - confidence: max()
  * - description/evidence: from the highest-ranked source (ai > remote > local-rule)
  * - severity: recomputed from merged signals (max severity floor, max confidence, max cost)
+ *
+ * NOTE: two findings on the same endpoint always collapse regardless of line distance —
+ * the endpoint ID is the canonical dedup anchor. This is intentional: local + remote/AI
+ * detectors describing the same endpoint should produce one merged finding.
  */
 export function collapseSuggestions(suggestions: Suggestion[]): Suggestion[] {
   const byKey = new Map<string, Suggestion>();
