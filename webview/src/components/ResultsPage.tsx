@@ -592,9 +592,11 @@ export function ResultsPage({
 }: ResultsPageProps) {
   const [findingsTab, setFindingsTab] = useState<"issues" | "endpoints">("issues");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [minConfidence, setMinConfidence] = useState(0); // 0 = show all
 
   const presentTypes = Array.from(new Set(suggestions.map((s) => s.type))).sort();
-  const visibleSuggestions = typeFilter === "all" ? suggestions : suggestions.filter((s) => s.type === typeFilter);
+  const visibleSuggestions = (typeFilter === "all" ? suggestions : suggestions.filter((s) => s.type === typeFilter))
+    .filter((s) => (typeof s.confidence === "number" ? s.confidence : 1) >= minConfidence);
 
   const freeCount = endpoints.filter((ep) => ep.costModel === "free").length;
   const inLoopsCount = endpoints.filter((ep) => ep.frequencyClass && ep.frequencyClass.includes("loop")).length;
@@ -686,6 +688,18 @@ export function ResultsPage({
                       {presentTypes.map((t) => (
                         <option key={t} value={t}>{t} ({suggestions.filter((s) => s.type === t).length})</option>
                       ))}
+                    </select>
+                    <select
+                      aria-label="Minimum confidence"
+                      className="eco-input"
+                      style={{ fontSize: "10px", padding: "2px 6px", height: "22px" }}
+                      value={minConfidence}
+                      onChange={(e) => setMinConfidence(Number(e.target.value))}
+                    >
+                      <option value={0}>Any confidence</option>
+                      <option value={0.4}>≥ 40%</option>
+                      <option value={0.6}>≥ 60%</option>
+                      <option value={0.8}>≥ 80%</option>
                     </select>
                   </div>
                 )}
