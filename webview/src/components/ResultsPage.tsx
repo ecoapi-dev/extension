@@ -248,6 +248,24 @@ function SuggestionCard({
           <span style={{ fontSize: "11px", color: "var(--vscode-descriptionForeground)" }}>{provider}</span>
         )}
         <PricingBadge pricingClass={suggestion.pricingClass} />
+        {suggestion.sources && suggestion.sources.length > 1 && (
+          <span
+            style={{
+              background: "var(--vscode-editorGroupHeader-tabsBackground)",
+              color: "var(--vscode-descriptionForeground)",
+              border: "1px solid var(--vscode-panel-border)",
+              fontSize: "10px",
+              padding: "1px 5px",
+              borderRadius: "10px",
+              fontWeight: 600,
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+            }}
+            title={suggestion.sources.join(", ")}
+          >
+            detected by {suggestion.sources.length} sources
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         {suggestion.estimatedMonthlySavings > 0 && (
           <span style={{ color: "var(--vscode-charts-green, #4caf50)", fontSize: "11px", flexShrink: 0, whiteSpace: "nowrap" }}>
