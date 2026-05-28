@@ -1,8 +1,9 @@
-import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
+import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary, Severity } from "./analysis/types";
 import type { LocalWasteFinding } from "./scanner/local-waste-detector";
 import { classifyEndpointScope, detectEndpointProvider } from "./scanner/endpoint-classification";
 import { estimateLocalMonthlyCost } from "./intelligence/cost-utils";
 import { computeEndpointId } from "./scanner/endpoint-id";
+import { FREQUENCY_CLASS_MULTIPLIERS } from "./simulator/engine";
 
 export interface FinalScanResults {
   endpoints: EndpointRecord[];
@@ -60,6 +61,45 @@ export function calculateSavings(
   const weight = SEVERITY_WEIGHTS[severity] ?? 0.50;
   return Number((endpointMonthlyCost * multiplier * weight).toFixed(2));
 }
+
+/**
+ * #85: monthly $ exposure of a finding (internal severity signal — never shown).
+ * Heuristic only: endpoint monthlyCost (LOCAL_PRICING/fingerprints) amplified by the
+ * shared frequency-class multiplier. Returns null when no baseline cost is known.
+ */
+export function computeCostImpact(
+  baselineMonthlyCost: number,
+  frequencyClass: string | undefined
+): number | null {
+  if (!baselineMonthlyCost || baselineMonthlyCost <= 0) return null;
+  const multiplier = frequencyClass ? (FREQUENCY_CLASS_MULTIPLIERS[frequencyClass] ?? 1) : 1;
+  return Number((baselineMonthlyCost * multiplier).toFixed(2));
+}
+
+export interface SeveritySignals {
+  riskScore: number;             // structural score (0..~7) from the detector
+  confidence: number;            // 0..1
+  costImpactUsd: number | null;  // from computeCostImpact()
+}
+
+/**
+ * #85: the single place severity is derived. Hybrid model —
+ *  - structural FLOOR (riskScore thresholds 5/3, matching the calibrated scoreToSeverity)
+ *    preserves C1 precision and keeps free-endpoint risks visible;
+ *  - cost AMPLIFIER (confidence × costImpactUsd, thresholds 100/10) can only escalate.
+ * severity = max(structuralTier, costTier). Never drops below structural → benchmark-safe.
+ */
+export function deriveSeverity(signals: SeveritySignals): Severity {
+  const structuralTier = signals.riskScore >= 5 ? 2 : signals.riskScore >= 3 ? 1 : 0;
+  const costScore = signals.confidence * (signals.costImpactUsd ?? 0);
+  const costTier = costScore >= 100 ? 2 : costScore >= 10 ? 1 : 0;
+  const tier = Math.max(structuralTier, costTier);
+  return tier === 2 ? "high" : tier === 1 ? "medium" : "low";
+}
+
+/** Map a finding's own/structural severity back to an approximate riskScore.
+ *  Used later for AI findings (no structural score) so deriveSeverity works uniformly. */
+export const SEVERITY_TO_RISK_SCORE: Record<Severity, number> = { high: 5, medium: 3, low: 1 };
 
 const FREQUENCY_SEVERITY: Record<string, number> = {
   polling: 6,
