@@ -195,7 +195,7 @@ function buildAggressiveSuggestions(
       description: buildAggressiveDescription(endpoint, type),
       codeFix: "",
       source: "local-rule",
-      sources: ["remote"],
+      sources: ["local-rule"],
       confidence,
       evidence: endpoint.callSites.slice(0, 3).map((site) => `Observed callsite: ${site.file}:${site.line}`),
       pricingClass: classifyPricing([endpoint.costModel]),
@@ -262,6 +262,9 @@ function mergeLocalWasteFindings(
       ? fileMonthlyCost
       : 0;
     const pricingClass = classifyPricing(fileEndpoints.map((ep) => ep.costModel));
+    // Heuristic: prefer the nearest endpoint's frequency class; fall back to any
+    // classed endpoint in the file. In multi-endpoint files this can over/under-state
+    // cost impact, which may shift severity by one tier (never adds/drops a finding).
     const frequencyClass = closestEndpoint?.frequencyClass
       ?? fileEndpoints.find((ep) => ep.frequencyClass)?.frequencyClass;
     const costImpactUsd = computeCostImpact(baselineCost, frequencyClass);
@@ -739,7 +742,11 @@ export class ScanPublishingHandler {
           getAllEndpoints(projectId, scanResult.scanId, rcApiKey),
           getAllSuggestions(projectId, scanResult.scanId, rcApiKey),
         ]);
-        const taggedRemoteSuggestions = suggestions.map((s) => ({ ...s, source: s.source ?? "remote" }));
+        const taggedRemoteSuggestions = suggestions.map((s) => ({
+          ...s,
+          source: s.source ?? "remote",
+          sources: s.sources ?? ["remote"],
+        }));
 
         const endpoints = mergeRemoteAndLocalEndpoints(remoteEndpoints, apiCalls, projectId, scanResult.scanId);
         const externalEndpoints = endpoints.filter((ep) => ep.scope !== "internal");

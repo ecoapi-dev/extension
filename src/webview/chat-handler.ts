@@ -431,7 +431,11 @@ export class ChatHandler {
     const aiFrequencyClass = closestEndpoint?.frequencyClass
       ?? fileEndpoints.find((ep) => ep.frequencyClass)?.frequencyClass;
     const costImpactUsd = computeCostImpact(monthlyBaseline, aiFrequencyClass);
-    const severity = deriveSeverity({ riskScore: SEVERITY_TO_RISK_SCORE[finding.severity], confidence: finding.confidence, costImpactUsd });
+    const severity = deriveSeverity({
+      riskScore: SEVERITY_TO_RISK_SCORE[finding.severity],
+      confidence: finding.confidence,
+      costImpactUsd,
+    });
     return {
       id: `ai-${Date.now()}-${index + 1}`,
       projectId,

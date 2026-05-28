@@ -207,7 +207,7 @@ function buildAggressiveSuggestions(endpoints: EndpointRecord[], suggestions: Su
       description: buildAggressiveDescription(endpoint, type),
       codeFix: "",
       source: "local-rule",
-      sources: ["remote"],
+      sources: ["local-rule"],
       confidence,
       evidence: endpoint.callSites.slice(0, 3).map((site) => `Observed callsite: ${site.file}:${site.line}`),
       pricingClass: classifyPricing([endpoint.costModel]),
@@ -282,6 +282,9 @@ function mergeLocalWasteFindings(
       ? fileMonthlyCost
       : 0; // unknown — no savings estimate
     const pricingClass = classifyPricing(fileEndpoints.map((ep) => ep.costModel));
+    // Heuristic: prefer the nearest endpoint's frequency class; fall back to any
+    // classed endpoint in the file. In multi-endpoint files this can over/under-state
+    // cost impact, which may shift severity by one tier (never adds/drops a finding).
     const frequencyClass = closestEndpoint?.frequencyClass
       ?? fileEndpoints.find((ep) => ep.frequencyClass)?.frequencyClass;
     const costImpactUsd = computeCostImpact(baselineCost, frequencyClass);
@@ -378,7 +381,11 @@ function pickMostSevereFrequency(a: string | undefined, b: string | undefined): 
 }
 
 function tagRemoteSuggestions(suggestions: Suggestion[]): Suggestion[] {
-  return suggestions.map((suggestion) => ({ ...suggestion, source: suggestion.source ?? "remote" }));
+  return suggestions.map((suggestion) => ({
+    ...suggestion,
+    source: suggestion.source ?? "remote",
+    sources: suggestion.sources ?? ["remote"],
+  }));
 }
 
 export function mergeRemoteAndLocalEndpoints(

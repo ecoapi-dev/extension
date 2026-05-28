@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { deriveSeverity, computeCostImpact } from "../scan-results";
+import { deriveSeverity, computeCostImpact, buildRemoteScanResults } from "../scan-results";
 import { buildLocalScanResults } from "../scan-results";
-import type { ApiCallInput } from "../analysis/types";
+import type { ApiCallInput, EndpointRecord, ScanSummary } from "../analysis/types";
 import type { LocalWasteFinding } from "../scanner/local-waste-detector";
 
 function run(name: string, fn: () => void): void {
@@ -61,4 +61,20 @@ run("buildLocalScanResults: every suggestion has costImpactUsd defined and sourc
     assert.ok(Array.isArray(s.sources) && s.sources.length >= 1, "sources must be set");
     assert.ok(["high", "medium", "low"].includes(s.severity));
   }
+});
+
+run("buildRemoteScanResults: aggressive suggestion from endpoint status is labeled local-rule with cost impact", () => {
+  const endpoint: EndpointRecord = {
+    id: "ep-cache", projectId: "p", scanId: "s", provider: "openai",
+    method: "GET", url: "https://api.openai.com/v1/models", files: ["src/x.ts"],
+    callSites: [{ file: "src/x.ts", line: 3, library: "openai", frequency: "per-request" }],
+    callsPerDay: 100, monthlyCost: 45, status: "cacheable", frequencyClass: "polling",
+  };
+  const summary: ScanSummary = { totalEndpoints: 1, totalCallsPerDay: 100, totalMonthlyCost: 45, highRiskCount: 0 };
+  const { suggestions } = buildRemoteScanResults([endpoint], [], summary, [], [], "p", "s");
+  const aggressive = suggestions.find((sug) => sug.id.startsWith("local-"));
+  assert.ok(aggressive, "expected an aggressive suggestion from the cacheable endpoint");
+  assert.deepEqual(aggressive!.sources, ["local-rule"]);
+  assert.ok(aggressive!.costImpactUsd !== undefined);
+  assert.ok(["high", "medium", "low"].includes(aggressive!.severity));
 });
