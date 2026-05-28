@@ -77,7 +77,7 @@ export function computeCostImpact(
 }
 
 export interface SeveritySignals {
-  riskScore: number;             // structural score (0..~7) from the detector
+  riskScore: number;             // structural score from the detector (see emitting detectors)
   confidence: number;            // 0..1
   costImpactUsd: number | null;  // from computeCostImpact()
 }
@@ -97,8 +97,9 @@ export function deriveSeverity(signals: SeveritySignals): Severity {
   return tier === 2 ? "high" : tier === 1 ? "medium" : "low";
 }
 
-/** Map a finding's own/structural severity back to an approximate riskScore.
- *  Used later for AI findings (no structural score) so deriveSeverity works uniformly. */
+/** Canonical riskScore floor for each severity tier. Used for AI findings (which have
+ *  no structural score) so deriveSeverity() can be called uniformly. Values match the
+ *  deriveSeverity thresholds: high >= 5, medium >= 3, low < 3. */
 export const SEVERITY_TO_RISK_SCORE: Record<Severity, number> = { high: 5, medium: 3, low: 1 };
 
 const FREQUENCY_SEVERITY: Record<string, number> = {

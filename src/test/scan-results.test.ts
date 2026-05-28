@@ -30,3 +30,12 @@ run("deriveSeverity: same type, different cost -> different severity (#85 accept
   const pricey = deriveSeverity({ riskScore: 2, confidence: 0.8, costImpactUsd: 500 });
   assert.notEqual(cheap, pricey);
 });
+
+run("deriveSeverity: exact threshold boundaries (>= semantics) hold", () => {
+  // structural floor boundaries (cost zeroed out)
+  assert.equal(deriveSeverity({ riskScore: 5, confidence: 0, costImpactUsd: 0 }), "high");
+  assert.equal(deriveSeverity({ riskScore: 3, confidence: 0, costImpactUsd: 0 }), "medium");
+  // cost amplifier boundaries (confidence=1 for clean arithmetic, structural floored)
+  assert.equal(deriveSeverity({ riskScore: 1, confidence: 1.0, costImpactUsd: 100 }), "high");
+  assert.equal(deriveSeverity({ riskScore: 1, confidence: 1.0, costImpactUsd: 10 }), "medium");
+});
