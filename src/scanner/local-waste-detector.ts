@@ -108,6 +108,16 @@ function getWindow(lines: string[], lineIndex: number, radius = 8): string {
   return lines.slice(start, end).join("\n");
 }
 
+// #112: guard regexes (CACHE_GUARD/BATCH_GUARD/...) must not be tripped by the
+// bare words "cache"/"batch" appearing in comments. Strip line + block comments
+// before testing guards; all other signals keep using the raw window text.
+function stripComments(windowText: string): string {
+  return windowText
+    .replace(/\/\*[\s\S]*?\*\//g, " ")   // block comments
+    .replace(/\/\/[^\n]*/g, " ")          // // line comments
+    .replace(/(^|\s)#[^\n]*/g, "$1 ");    // # line comments (python)
+}
+
 function extractCallSites(relativePath: string, lines: string[]): MatchedCallSite[] {
   const rawMatches: Array<{ line: number; match: ApiCallMatch }> = [];
   const seen = new Set<string>();
@@ -136,6 +146,7 @@ function extractCallSites(relativePath: string, lines: string[]): MatchedCallSit
 
   return rawMatches.map(({ line, match }) => {
     const windowText = getWindow(lines, line - 1);
+    const guardWindowText = stripComments(windowText);
     const callKind = classifyCallKind(match);
     return {
       line,
@@ -148,12 +159,12 @@ function extractCallSites(relativePath: string, lines: string[]): MatchedCallSit
       hotPath: HOT_PATH_PATTERN.test(windowText) || /(^|\/)(api|routes?|handlers?|pages|app)\//i.test(relativePath),
       polling: POLLING_PATTERN.test(windowText),
       retryNearby: RETRY_PATTERN.test(windowText),
-      cacheGuard: CACHE_GUARD.test(windowText),
-      batchGuard: BATCH_GUARD.test(windowText),
-      concurrencyGuard: CONCURRENCY_GUARD.test(windowText),
-      retryGuard: RETRY_GUARD.test(windowText),
-      idempotencyGuard: IDEMPOTENCY_GUARD.test(windowText),
-      explicitGuard: EXPLICIT_GUARD.test(windowText),
+      cacheGuard: CACHE_GUARD.test(guardWindowText),
+      batchGuard: BATCH_GUARD.test(guardWindowText),
+      concurrencyGuard: CONCURRENCY_GUARD.test(guardWindowText),
+      retryGuard: RETRY_GUARD.test(guardWindowText),
+      idempotencyGuard: IDEMPOTENCY_GUARD.test(guardWindowText),
+      explicitGuard: EXPLICIT_GUARD.test(guardWindowText),
       authLookup: AUTH_LOOKUP_PATTERN.test(windowText),
       configLookup: CONFIG_LOOKUP_PATTERN.test(windowText),
       smallBounded: SMALL_BOUNDED_PATTERN.test(windowText),

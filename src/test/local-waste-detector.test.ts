@@ -59,4 +59,47 @@ run("reduces confidence when polling already has backoff and concurrency guards"
   assert.ok((rateLimit?.confidence ?? 1) < 0.75);
 });
 
+run("#112: bare 'cache' in a comment does not suppress a cache finding", () => {
+  const text = [
+    "// we should cache this someday but do not yet",
+    "export async function loadUsers(ids) {",
+    "  const out = [];",
+    "  for (const id of ids) {",
+    "    out.push(await fetch(`https://api.example.com/users/${id}`));",
+    "  }",
+    "  return out;",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/users.ts", text);
+  assert.ok(findings.some((f) => f.type === "cache"), "expected a cache finding despite the comment word");
+});
+
+run("#112: bare 'batch' in a comment does not suppress a batch finding", () => {
+  const text = [
+    "// batch these calls in a follow-up PR",
+    "export async function embedAll(items) {",
+    "  for (const it of items) {",
+    "    await openai.embeddings.create({ input: it });",
+    "  }",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/embed.ts", text);
+  assert.ok(findings.some((f) => f.type === "batch"), "expected a batch finding despite the comment word");
+});
+
+run("#112: a real cache mechanism in code still suppresses the cache finding", () => {
+  const text = [
+    "import { queryClient } from './qc';",
+    "export async function loadUsers(ids) {",
+    "  const out = [];",
+    "  for (const id of ids) {",
+    "    out.push(await queryClient.fetchQuery(['u', id], () => fetch(`/users/${id}`), { staleTime: 60000 }));",
+    "  }",
+    "  return out;",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/users2.ts", text);
+  assert.ok(!findings.some((f) => f.type === "cache"), "real staleTime/queryClient guard should still suppress");
+});
+
 console.log("All local waste detector tests passed");
