@@ -253,6 +253,8 @@ export function buildRepoIntelligenceSnapshot(
         confidence: finding.confidence,
         description: finding.description,
         evidence: [...finding.evidence],
+        sources: ["local-rule"],
+        costImpactUsd: null,
       };
 
       findings[findingId] = findingNode;

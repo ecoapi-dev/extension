@@ -38,6 +38,8 @@ export interface FindingNode {
   confidence: number;
   description: string;
   evidence: string[];
+  sources: string[];
+  costImpactUsd: number | null;
 }
 
 export interface ProviderNode {
