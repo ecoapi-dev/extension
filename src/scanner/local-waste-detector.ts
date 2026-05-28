@@ -114,7 +114,7 @@ function getWindow(lines: string[], lineIndex: number, radius = 8): string {
 function stripComments(windowText: string): string {
   return windowText
     .replace(/\/\*[\s\S]*?\*\//g, " ")   // block comments
-    .replace(/\/\/[^\n]*/g, " ")          // // line comments
+    .replace(/(?<![:/])\/\/[^\n]*/g, " ")  // // line comments, not https://
     .replace(/(^|\s)#[^\n]*/g, "$1 ");    // # line comments (python)
 }
 

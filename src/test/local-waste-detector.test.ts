@@ -102,4 +102,36 @@ run("#112: a real cache mechanism in code still suppresses the cache finding", (
   assert.ok(!findings.some((f) => f.type === "cache"), "real staleTime/queryClient guard should still suppress");
 });
 
+run("#112: a real cache option on the same line as an https:// URL still suppresses", () => {
+  const text = [
+    "export async function loadUsers(ids) {",
+    "  const out = [];",
+    "  for (const id of ids) {",
+    "    out.push(await fetch(`https://api.example.com/users/${id}`, { cache: 'force-cache' }));",
+    "  }",
+    "  return out;",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/users3.ts", text);
+  assert.ok(!findings.some((f) => f.type === "cache"), "inline cache option must still suppress despite the https:// URL");
+});
+
+run("#112: bare 'cleanup'/'guard' word in a comment does not suppress", () => {
+  const text = [
+    "// cleanup this endpoint later",
+    "export async function loadItems(ids) {",
+    "  const out = [];",
+    "  for (const id of ids) {",
+    "    out.push(await fetch(`https://api.example.com/items/${id}`));",
+    "  }",
+    "  return out;",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/items.ts", text);
+  assert.ok(
+    findings.some((f) => f.type === "n_plus_one" || f.type === "cache"),
+    "comment-only 'cleanup' must not suppress findings; expected n_plus_one or cache finding"
+  );
+});
+
 console.log("All local waste detector tests passed");
