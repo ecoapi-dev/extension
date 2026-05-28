@@ -598,7 +598,9 @@ export function buildLocalScanResults(
   scanId: string
 ): FinalScanResults {
   const endpoints = mergeRemoteAndLocalEndpoints([], apiCalls, projectId, scanId);
-  const suggestions = mergeLocalWasteFindings([], localWasteFindings, endpoints, 0, projectId, scanId);
+  const suggestions = collapseSuggestions(
+    mergeLocalWasteFindings([], localWasteFindings, endpoints, 0, projectId, scanId)
+  );
   return {
     endpoints,
     suggestions,
@@ -621,13 +623,15 @@ export function buildRemoteScanResults(
   scanId: string
 ): FinalScanResults {
   const endpoints = mergeRemoteAndLocalEndpoints(remoteEndpoints, apiCalls, projectId, scanId);
-  const suggestions = mergeLocalWasteFindings(
-    buildAggressiveSuggestions(endpoints, tagRemoteSuggestions(remoteSuggestions)),
-    localWasteFindings,
-    endpoints,
-    remoteSummary.totalMonthlyCost,
-    projectId,
-    scanId
+  const suggestions = collapseSuggestions(
+    mergeLocalWasteFindings(
+      buildAggressiveSuggestions(endpoints, tagRemoteSuggestions(remoteSuggestions)),
+      localWasteFindings,
+      endpoints,
+      remoteSummary.totalMonthlyCost,
+      projectId,
+      scanId
+    )
   );
   return {
     endpoints,
