@@ -102,15 +102,19 @@ The `lineRange` bucket means "lines 12–18" matches "lines 14–16" (one is a s
 4. When duplicates collapse, preserve the higher-confidence finding and append the other's source as metadata so the UI can show "detected by 2 sources."
 
 ### Acceptance criteria
-- [ ] Two findings of the same `type` on the same `endpointId` collapse to one.
-- [ ] The collapsed finding lists both sources (e.g., `sources: ["local-rule", "remote"]`).
-- [ ] Confidence of the collapsed finding is `max()` of inputs, not averaged.
-- [ ] Description picked: prefer the AI's (richer wording), fall back to local-rule's if no AI version exists.
+- [x] Two findings of the same `type` on the same `endpointId` collapse to one.
+- [x] The collapsed finding lists both sources (e.g., `sources: ["local-rule", "remote"]`).
+- [x] Confidence of the collapsed finding is `max()` of inputs, not averaged.
+- [x] Description picked: prefer the AI's (richer wording), fall back to local-rule's if no AI version exists.
+
+### Landed (2026-05-28)
+Implemented on the `Suggestion` pipeline, not the idealized `FindingNode` graph: the real AI-vs-local merge point is `chat-handler.ts:mergeAiSuggestions`, and the user-facing findings are `Suggestion[]`. A single `collapseSuggestions()` in `scan-results.ts` dedupes by `type :: file :: (endpointId | floor(line/5) bucket)`, unions `sources`, takes `max()` confidence/cost/savings, and prefers the highest-ranked source's description (ai > remote > local-rule). `mergeAiSuggestions` is now a thin wrapper over it (collapse, not drop); both scan builders apply it once. `sources` is mirrored onto `FindingNode` for graph parity. UI: a "detected by N sources" badge renders when `sources.length > 1` (interactive EDH check pending). Full benchmark Δ +0.00pp on all metrics.
 
 ### Files
-- `src/intelligence/finding-dedupe.ts`
-- `src/webview-provider.ts` (merge point)
-- `src/intelligence/types.ts` (add `sources: string[]` to FindingNode)
+- `src/scan-results.ts` (`collapseSuggestions`, applied at both builders)
+- `src/webview/chat-handler.ts` (`mergeAiSuggestions` merge point)
+- `src/analysis/types.ts` (`sources?`/`costImpactUsd?` on `Suggestion`) + `src/intelligence/types.ts` (`sources`/`costImpactUsd` on `FindingNode`)
+- `webview/src/components/ResultsPage.tsx` + `webview/src/types.ts` (sources badge)
 
 ### Depends on
 - B3 (stable endpoint IDs for the merge key).
@@ -162,17 +166,20 @@ This means an unbounded loop on a free endpoint (cost impact ≈ $0) automatical
 4. Add UI controls: filter by confidence, sort by cost impact.
 
 ### Acceptance criteria
-- [ ] Every `FindingNode` has `confidence` and `costImpactUsd` populated.
-- [ ] Severity is computed at one place from those signals.
-- [ ] Filtering by confidence in the webview hides low-confidence findings.
-- [ ] Two findings of the same type on different-cost endpoints get different severities.
-- [ ] Existing severity-based UI grouping still works (groups derived from new computation).
+- [x] Every finding carries `confidence` and `costImpactUsd` (populated; `FindingNode` mirrors both, `costImpactUsd` null at graph-build time and resolved in the `Suggestion` layer where endpoint cost is known).
+- [x] Severity is computed at one place from those signals (`deriveSeverity()` in `scan-results.ts`).
+- [~] Filtering by confidence in the webview hides low-confidence findings (code-complete + builds/typechecks; interactive EDH check pending).
+- [x] Two findings of the same type on different-cost endpoints get different severities (unit-tested).
+- [~] Existing severity-based UI grouping still works (groups derive from the filtered set; interactive EDH check pending).
+
+### Landed (2026-05-28) — Hybrid severity model
+Severity is **not** the spec's literal `confidence × costImpactUsd`. That pure formula would zero-out free-endpoint risk and re-baseline the calibrated detectors. Instead `deriveSeverity({riskScore, confidence, costImpactUsd})` is a **hybrid floor + amplifier**: the C1-calibrated structural `riskScore` sets a floor (thresholds 5/3, matching `scoreToSeverity`) and a confidence-weighted cost term (thresholds 100/10) can only escalate via `Math.max`. This keeps free-endpoint structural risks visible, lets expensive endpoints rise, and is benchmark-safe — severity reassignment never adds or drops a finding, so per-type precision/recall is untouched (full benchmark Δ +0.00pp). `costImpactUsd` reuses the existing heuristic (`monthlyCost × FREQUENCY_CLASS_MULTIPLIERS`) and stays internal — it drives severity/ordering but is never rendered. Detectors carry a `riskScore`; severity is overridden at every `Suggestion`-construction site (incl. AI findings, whose self-reported severity maps to a riskScore floor).
 
 ### Files
-- `src/scanner/local-waste-detector.ts` (and python variant + ast/waste/*)
-- `src/intelligence/types.ts` (FindingNode shape)
-- `webview/src/components/ResultsPage.tsx` (filter UI)
-- `src/webview-provider.ts` (severity computation)
+- `src/scan-results.ts` (`deriveSeverity`, `computeCostImpact`, `SEVERITY_TO_RISK_SCORE`; applied at all construction sites)
+- `src/scanner/local-waste-detector.ts` (+ python variant + `ast/waste/*`): emit `riskScore`
+- `src/analysis/types.ts` / `src/intelligence/types.ts` (`costImpactUsd`)
+- `webview/src/components/ResultsPage.tsx` + `webview/src/types.ts` (confidence filter)
 
 ### Depends on
 - C1 (per-detector confidence values come from the calibration).
