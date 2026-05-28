@@ -4,7 +4,7 @@ import type { PersistedKeyValidationSnapshot } from "../key-management";
 import type { EndpointRecord, Suggestion, ScanSummary } from "../analysis/types";
 import { buildSystemPrompt } from "../chat/prompts";
 import { readWorkspaceFileExcerpt } from "../scanner/workspace-scanner";
-import { classifyPricing, calculateSavings } from "../scan-results";
+import { classifyPricing, calculateSavings, deriveSeverity, computeCostImpact, SEVERITY_TO_RISK_SCORE } from "../scan-results";
 import { buildKeyFingerprint } from "../key-management";
 import {
   buildProviderOptions,
@@ -428,23 +428,29 @@ export class ChatHandler {
       ? fileMonthlyCost
       : 0; // unknown — no savings estimate
 
+    const aiFrequencyClass = closestEndpoint?.frequencyClass
+      ?? fileEndpoints.find((ep) => ep.frequencyClass)?.frequencyClass;
+    const costImpactUsd = computeCostImpact(monthlyBaseline, aiFrequencyClass);
+    const severity = deriveSeverity({ riskScore: SEVERITY_TO_RISK_SCORE[finding.severity], confidence: finding.confidence, costImpactUsd });
     return {
       id: `ai-${Date.now()}-${index + 1}`,
       projectId,
       scanId,
       type: finding.type,
-      severity: finding.severity,
+      severity,
       affectedEndpoints: related,
       affectedFiles: [finding.affectedFile],
       targetLine: finding.targetLine,
-      estimatedMonthlySavings: calculateSavings(finding.type, finding.severity, monthlyBaseline),
+      estimatedMonthlySavings: calculateSavings(finding.type, severity, monthlyBaseline),
       description: finding.description,
       codeFix: "",
       source: "ai",
+      sources: ["ai"],
       confidence: finding.confidence,
       evidence: finding.evidence,
       reviewedAt: new Date().toISOString(),
       pricingClass: classifyPricing(fileEndpoints.map((ep) => ep.costModel)),
+      costImpactUsd,
     };
   }
 

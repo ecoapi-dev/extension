@@ -188,21 +188,30 @@ function buildAggressiveSuggestions(endpoints: EndpointRecord[], suggestions: Su
     if (!type) continue;
     const dedupeKey = `${endpoint.id}:${type}`;
     if (existing.has(dedupeKey)) continue;
+    const confidence = confidenceFromEndpointStatus(endpoint);
+    const costImpactUsd = computeCostImpact(endpoint.monthlyCost, endpoint.frequencyClass);
+    const severity = deriveSeverity({
+      riskScore: SEVERITY_TO_RISK_SCORE[chooseSeverity(endpoint.status, endpoint.monthlyCost)],
+      confidence,
+      costImpactUsd,
+    });
     extras.push({
       id: `local-${endpoint.id}-${type}`,
       projectId: endpoint.projectId,
       scanId: endpoint.scanId,
       type,
-      severity: chooseSeverity(endpoint.status, endpoint.monthlyCost),
+      severity,
       affectedEndpoints: [endpoint.id],
       affectedFiles: endpoint.files,
-      estimatedMonthlySavings: calculateSavings(type, "medium", endpoint.monthlyCost),
+      estimatedMonthlySavings: calculateSavings(type, severity, endpoint.monthlyCost),
       description: buildAggressiveDescription(endpoint, type),
       codeFix: "",
       source: "local-rule",
-      confidence: confidenceFromEndpointStatus(endpoint),
+      sources: ["remote"],
+      confidence,
       evidence: endpoint.callSites.slice(0, 3).map((site) => `Observed callsite: ${site.file}:${site.line}`),
       pricingClass: classifyPricing([endpoint.costModel]),
+      costImpactUsd,
     });
   }
   return [...suggestions, ...extras];
@@ -273,22 +282,28 @@ function mergeLocalWasteFindings(
       ? fileMonthlyCost
       : 0; // unknown — no savings estimate
     const pricingClass = classifyPricing(fileEndpoints.map((ep) => ep.costModel));
+    const frequencyClass = closestEndpoint?.frequencyClass
+      ?? fileEndpoints.find((ep) => ep.frequencyClass)?.frequencyClass;
+    const costImpactUsd = computeCostImpact(baselineCost, frequencyClass);
+    const severity = deriveSeverity({ riskScore: finding.riskScore, confidence: finding.confidence, costImpactUsd });
     locals.push({
       id: finding.id,
       projectId,
       scanId,
       type: finding.type,
-      severity: finding.severity,
+      severity,
       affectedEndpoints: fileEndpoints.map((ep) => ep.id),
       affectedFiles: [finding.affectedFile],
       targetLine: finding.line,
-      estimatedMonthlySavings: calculateSavings(finding.type, finding.severity, baselineCost),
+      estimatedMonthlySavings: calculateSavings(finding.type, severity, baselineCost),
       description: finding.description,
       codeFix: "",
       source: "local-rule",
+      sources: ["local-rule"],
       confidence: finding.confidence,
       evidence: finding.evidence,
       pricingClass,
+      costImpactUsd,
     });
   }
   return [...baseSuggestions, ...locals];

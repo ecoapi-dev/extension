@@ -99,6 +99,8 @@ export interface Suggestion {
   description: string;
   codeFix: string;
   source?: "remote" | "local-rule" | "ai";
+  sources?: string[];
+  costImpactUsd?: number | null;
   confidence?: number;
   evidence?: string[];
   reviewedAt?: string;

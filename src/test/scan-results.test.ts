@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { deriveSeverity, computeCostImpact } from "../scan-results";
+import { buildLocalScanResults } from "../scan-results";
+import type { ApiCallInput } from "../analysis/types";
+import type { LocalWasteFinding } from "../scanner/local-waste-detector";
 
 function run(name: string, fn: () => void): void {
   try { fn(); console.log(`PASS ${name}`); }
@@ -38,4 +41,24 @@ run("deriveSeverity: exact threshold boundaries (>= semantics) hold", () => {
   // cost amplifier boundaries (confidence=1 for clean arithmetic, structural floored)
   assert.equal(deriveSeverity({ riskScore: 1, confidence: 1.0, costImpactUsd: 100 }), "high");
   assert.equal(deriveSeverity({ riskScore: 1, confidence: 1.0, costImpactUsd: 10 }), "medium");
+});
+
+run("buildLocalScanResults: every suggestion has costImpactUsd defined and sources set", () => {
+  const calls: ApiCallInput[] = [{
+    file: "src/a.ts", line: 5, method: "POST", url: "https://api.openai.com/v1/chat/completions",
+    library: "openai", provider: "openai", frequency: "per-request", frequencyClass: "unbounded-loop",
+    methodSignature: "chat.completions.create", costModel: "per_token",
+  }];
+  const findings: LocalWasteFinding[] = [{
+    id: "f1", type: "n_plus_one", severity: "low", riskScore: 6, confidence: 0.9,
+    description: "loop-driven openai call", affectedFile: "src/a.ts", line: 5,
+    evidence: ["Outbound call occurs inside a loop."],
+  }];
+  const { suggestions } = buildLocalScanResults(calls, findings, "proj", "scan");
+  assert.ok(suggestions.length >= 1);
+  for (const s of suggestions) {
+    assert.ok(s.costImpactUsd !== undefined, "costImpactUsd must be populated (null allowed)");
+    assert.ok(Array.isArray(s.sources) && s.sources.length >= 1, "sources must be set");
+    assert.ok(["high", "medium", "low"].includes(s.severity));
+  }
 });
