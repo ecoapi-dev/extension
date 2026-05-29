@@ -71,4 +71,79 @@ run("flags inline-parallel fanout for an n/count-capable endpoint (regex-only pa
   assert.match(inlineParallel?.description ?? "", /n\/count parameter/);
 });
 
+run("#112: bare 'cache' in a comment does not suppress a cache finding", () => {
+  const text = [
+    "// we should cache this someday but do not yet",
+    "export async function loadUsers(ids) {",
+    "  const out = [];",
+    "  for (const id of ids) {",
+    "    out.push(await fetch(`https://api.example.com/users/${id}`));",
+    "  }",
+    "  return out;",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/users.ts", text);
+  assert.ok(findings.some((f) => f.type === "cache"), "expected a cache finding despite the comment word");
+});
+
+run("#112: bare 'batch' in a comment does not suppress a batch finding", () => {
+  const text = [
+    "// batch these calls in a follow-up PR",
+    "export async function embedAll(items) {",
+    "  for (const it of items) {",
+    "    await openai.embeddings.create({ input: it });",
+    "  }",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/embed.ts", text);
+  assert.ok(findings.some((f) => f.type === "batch"), "expected a batch finding despite the comment word");
+});
+
+run("#112: a real cache mechanism in code still suppresses the cache finding", () => {
+  const text = [
+    "import { queryClient } from './qc';",
+    "export async function loadUsers(ids) {",
+    "  const out = [];",
+    "  for (const id of ids) {",
+    "    out.push(await queryClient.fetchQuery(['u', id], () => fetch(`/users/${id}`), { staleTime: 60000 }));",
+    "  }",
+    "  return out;",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/users2.ts", text);
+  assert.ok(!findings.some((f) => f.type === "cache"), "real staleTime/queryClient guard should still suppress");
+});
+
+run("#112: a real cache option on the same line as an https:// URL still suppresses", () => {
+  const text = [
+    "export async function loadUsers(ids) {",
+    "  const out = [];",
+    "  for (const id of ids) {",
+    "    out.push(await fetch(`https://api.example.com/users/${id}`, { cache: 'force-cache' }));",
+    "  }",
+    "  return out;",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/users3.ts", text);
+  assert.ok(!findings.some((f) => f.type === "cache"), "inline cache option must still suppress despite the https:// URL");
+});
+
+run("#112: bare 'cleanup'/'guard' word in a comment does not suppress", () => {
+  const text = [
+    "// cleanup this endpoint later",
+    "export async function loadItems(ids) {",
+    "  const out = [];",
+    "  for (const id of ids) {",
+    "    out.push(await fetch(`https://api.example.com/items/${id}`));",
+    "  }",
+    "  return out;",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/items.ts", text);
+  assert.ok(
+    findings.some((f) => f.type === "n_plus_one" || f.type === "cache"),
+    "comment-only 'cleanup' must not suppress findings; expected n_plus_one or cache finding"
+  );
+});
+
 console.log("All local waste detector tests passed");

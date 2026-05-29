@@ -1,8 +1,9 @@
-import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary } from "./analysis/types";
+import type { ApiCallInput, EndpointRecord, Suggestion, ScanSummary, Severity } from "./analysis/types";
 import type { LocalWasteFinding } from "./scanner/local-waste-detector";
 import { classifyEndpointScope, detectEndpointProvider } from "./scanner/endpoint-classification";
 import { estimateLocalMonthlyCost } from "./intelligence/cost-utils";
 import { computeEndpointId } from "./scanner/endpoint-id";
+import { FREQUENCY_CLASS_MULTIPLIERS } from "./simulator/engine";
 
 export interface FinalScanResults {
   endpoints: EndpointRecord[];
@@ -59,6 +60,113 @@ export function calculateSavings(
   const multiplier = SAVINGS_MULTIPLIERS[type] ?? 0.10;
   const weight = SEVERITY_WEIGHTS[severity] ?? 0.50;
   return Number((endpointMonthlyCost * multiplier * weight).toFixed(2));
+}
+
+/**
+ * #85: monthly $ exposure of a finding (internal severity signal — never shown).
+ * Heuristic only: endpoint monthlyCost (LOCAL_PRICING/fingerprints) amplified by the
+ * shared frequency-class multiplier. Returns null when no baseline cost is known.
+ */
+export function computeCostImpact(
+  baselineMonthlyCost: number,
+  frequencyClass: string | undefined
+): number | null {
+  if (!baselineMonthlyCost || baselineMonthlyCost <= 0) return null;
+  const multiplier = frequencyClass ? (FREQUENCY_CLASS_MULTIPLIERS[frequencyClass] ?? 1) : 1;
+  return Number((baselineMonthlyCost * multiplier).toFixed(2));
+}
+
+export interface SeveritySignals {
+  riskScore: number;             // structural score from the detector (see emitting detectors)
+  confidence: number;            // 0..1
+  costImpactUsd: number | null;  // from computeCostImpact()
+}
+
+/**
+ * #85: the single place severity is derived. Hybrid model —
+ *  - structural FLOOR (riskScore thresholds 5/3, matching the calibrated scoreToSeverity)
+ *    preserves C1 precision and keeps free-endpoint risks visible;
+ *  - cost AMPLIFIER (confidence × costImpactUsd, thresholds 100/10) can only escalate.
+ * severity = max(structuralTier, costTier). Never drops below structural → benchmark-safe.
+ */
+export function deriveSeverity(signals: SeveritySignals): Severity {
+  const structuralTier = signals.riskScore >= 5 ? 2 : signals.riskScore >= 3 ? 1 : 0;
+  const costScore = signals.confidence * (signals.costImpactUsd ?? 0);
+  const costTier = costScore >= 100 ? 2 : costScore >= 10 ? 1 : 0;
+  const tier = Math.max(structuralTier, costTier);
+  return tier === 2 ? "high" : tier === 1 ? "medium" : "low";
+}
+
+/** Canonical riskScore floor for each severity tier. Used for AI findings (which have
+ *  no structural score) so deriveSeverity() can be called uniformly. Values match the
+ *  deriveSeverity thresholds: high >= 5, medium >= 3, low < 3. */
+export const SEVERITY_TO_RISK_SCORE: Record<Severity, number> = { high: 5, medium: 3, low: 1 };
+
+function suggestionMergeKey(s: Suggestion): string {
+  const file = s.affectedFiles[0] ?? "";
+  const endpoint = s.affectedEndpoints[0];
+  // When no endpoint or line is known, all same-type findings in the file share
+  // bucket L0 and collapse into one — acceptable for this file-level fallback;
+  // real call sites always carry a line number.
+  const locationBucket = endpoint ?? `L${Math.floor((s.targetLine ?? 0) / 5)}`;
+  return `${s.type}::${file}::${locationBucket}`;
+}
+
+const SOURCE_DESCRIPTION_RANK: Record<string, number> = { ai: 3, remote: 2, "local-rule": 1 };
+
+function sourcesOf(s: Suggestion): string[] {
+  if (s.sources && s.sources.length > 0) return s.sources;
+  return s.source ? [s.source] : [];
+}
+
+/**
+ * #84: collapse findings that describe the same issue at the same location into one.
+ * - dedupe key: type | file | endpointId (or 5-line bucket when no endpoint)
+ * - sources: union of both findings' sources
+ * - confidence: max()
+ * - description/evidence: from the highest-ranked source (ai > remote > local-rule)
+ * - severity: recomputed from merged signals (max severity floor, max confidence, max cost)
+ *
+ * NOTE: two findings on the same endpoint always collapse regardless of line distance —
+ * the endpoint ID is the canonical dedup anchor. This is intentional: local + remote/AI
+ * detectors describing the same endpoint should produce one merged finding.
+ */
+export function collapseSuggestions(suggestions: Suggestion[]): Suggestion[] {
+  const byKey = new Map<string, Suggestion>();
+  for (const incoming of suggestions) {
+    const key = suggestionMergeKey(incoming);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { ...incoming, sources: [...new Set(sourcesOf(incoming))] });
+      continue;
+    }
+
+    const mergedSources = [...new Set([...sourcesOf(existing), ...sourcesOf(incoming)])];
+    const confidence = Math.max(existing.confidence ?? 0, incoming.confidence ?? 0);
+    const costImpactUsd = Math.max(existing.costImpactUsd ?? 0, incoming.costImpactUsd ?? 0) || null;
+    const rank = (s: Suggestion) => SOURCE_DESCRIPTION_RANK[s.source ?? ""] ?? 0;
+    const descSource = rank(incoming) > rank(existing) ? incoming : existing;
+    const riskScore = SEVERITY_TO_RISK_SCORE[
+      ([existing.severity, incoming.severity].includes("high")
+        ? "high"
+        : [existing.severity, incoming.severity].includes("medium")
+        ? "medium"
+        : "low") as Severity
+    ];
+    const severity = deriveSeverity({ riskScore, confidence, costImpactUsd });
+
+    byKey.set(key, {
+      ...existing,
+      sources: mergedSources,
+      confidence,
+      costImpactUsd,
+      description: descSource.description,
+      evidence: descSource.evidence ?? existing.evidence,
+      severity,
+      estimatedMonthlySavings: Math.max(existing.estimatedMonthlySavings, incoming.estimatedMonthlySavings),
+    });
+  }
+  return [...byKey.values()];
 }
 
 const FREQUENCY_SEVERITY: Record<string, number> = {
@@ -147,21 +255,30 @@ function buildAggressiveSuggestions(endpoints: EndpointRecord[], suggestions: Su
     if (!type) continue;
     const dedupeKey = `${endpoint.id}:${type}`;
     if (existing.has(dedupeKey)) continue;
+    const confidence = confidenceFromEndpointStatus(endpoint);
+    const costImpactUsd = computeCostImpact(endpoint.monthlyCost, endpoint.frequencyClass);
+    const severity = deriveSeverity({
+      riskScore: SEVERITY_TO_RISK_SCORE[chooseSeverity(endpoint.status, endpoint.monthlyCost)],
+      confidence,
+      costImpactUsd,
+    });
     extras.push({
       id: `local-${endpoint.id}-${type}`,
       projectId: endpoint.projectId,
       scanId: endpoint.scanId,
       type,
-      severity: chooseSeverity(endpoint.status, endpoint.monthlyCost),
+      severity,
       affectedEndpoints: [endpoint.id],
       affectedFiles: endpoint.files,
-      estimatedMonthlySavings: calculateSavings(type, "medium", endpoint.monthlyCost),
+      estimatedMonthlySavings: calculateSavings(type, severity, endpoint.monthlyCost),
       description: buildAggressiveDescription(endpoint, type),
       codeFix: "",
       source: "local-rule",
-      confidence: confidenceFromEndpointStatus(endpoint),
+      sources: ["local-rule"],
+      confidence,
       evidence: endpoint.callSites.slice(0, 3).map((site) => `Observed callsite: ${site.file}:${site.line}`),
       pricingClass: classifyPricing([endpoint.costModel]),
+      costImpactUsd,
     });
   }
   return [...suggestions, ...extras];
@@ -232,22 +349,31 @@ function mergeLocalWasteFindings(
       ? fileMonthlyCost
       : 0; // unknown — no savings estimate
     const pricingClass = classifyPricing(fileEndpoints.map((ep) => ep.costModel));
+    // Heuristic: prefer the nearest endpoint's frequency class; fall back to any
+    // classed endpoint in the file. In multi-endpoint files this can over/under-state
+    // cost impact, which may shift severity by one tier (never adds/drops a finding).
+    const frequencyClass = closestEndpoint?.frequencyClass
+      ?? fileEndpoints.find((ep) => ep.frequencyClass)?.frequencyClass;
+    const costImpactUsd = computeCostImpact(baselineCost, frequencyClass);
+    const severity = deriveSeverity({ riskScore: finding.riskScore, confidence: finding.confidence, costImpactUsd });
     locals.push({
       id: finding.id,
       projectId,
       scanId,
       type: finding.type,
-      severity: finding.severity,
+      severity,
       affectedEndpoints: fileEndpoints.map((ep) => ep.id),
       affectedFiles: [finding.affectedFile],
       targetLine: finding.line,
-      estimatedMonthlySavings: calculateSavings(finding.type, finding.severity, baselineCost),
+      estimatedMonthlySavings: calculateSavings(finding.type, severity, baselineCost),
       description: finding.description,
       codeFix: "",
       source: "local-rule",
+      sources: ["local-rule"],
       confidence: finding.confidence,
       evidence: finding.evidence,
       pricingClass,
+      costImpactUsd,
     });
   }
   return [...baseSuggestions, ...locals];
@@ -322,7 +448,11 @@ function pickMostSevereFrequency(a: string | undefined, b: string | undefined): 
 }
 
 function tagRemoteSuggestions(suggestions: Suggestion[]): Suggestion[] {
-  return suggestions.map((suggestion) => ({ ...suggestion, source: suggestion.source ?? "remote" }));
+  return suggestions.map((suggestion) => ({
+    ...suggestion,
+    source: suggestion.source ?? "remote",
+    sources: suggestion.sources ?? ["remote"],
+  }));
 }
 
 export function mergeRemoteAndLocalEndpoints(
@@ -478,7 +608,9 @@ export function buildLocalScanResults(
   scanId: string
 ): FinalScanResults {
   const endpoints = mergeRemoteAndLocalEndpoints([], apiCalls, projectId, scanId);
-  const suggestions = mergeLocalWasteFindings([], localWasteFindings, endpoints, 0, projectId, scanId);
+  const suggestions = collapseSuggestions(
+    mergeLocalWasteFindings([], localWasteFindings, endpoints, 0, projectId, scanId)
+  );
   return {
     endpoints,
     suggestions,
@@ -501,13 +633,15 @@ export function buildRemoteScanResults(
   scanId: string
 ): FinalScanResults {
   const endpoints = mergeRemoteAndLocalEndpoints(remoteEndpoints, apiCalls, projectId, scanId);
-  const suggestions = mergeLocalWasteFindings(
-    buildAggressiveSuggestions(endpoints, tagRemoteSuggestions(remoteSuggestions)),
-    localWasteFindings,
-    endpoints,
-    remoteSummary.totalMonthlyCost,
-    projectId,
-    scanId
+  const suggestions = collapseSuggestions(
+    mergeLocalWasteFindings(
+      buildAggressiveSuggestions(endpoints, tagRemoteSuggestions(remoteSuggestions)),
+      localWasteFindings,
+      endpoints,
+      remoteSummary.totalMonthlyCost,
+      projectId,
+      scanId
+    )
   );
   return {
     endpoints,

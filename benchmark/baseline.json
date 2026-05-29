@@ -5,19 +5,19 @@
   "findingPrecision": 1,
   "findingRecall": 0.3333333333333333,
   "findingMetricsByType": {
-    "n_plus_one": {
-      "truePositives": 1,
-      "falsePositives": 0,
-      "falseNegatives": 0,
-      "precision": 1,
-      "recall": 1
-    },
     "batch": {
       "truePositives": 0,
       "falsePositives": 0,
       "falseNegatives": 1,
       "precision": 1,
       "recall": 0
+    },
+    "n_plus_one": {
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "precision": 1,
+      "recall": 1
     },
     "unbatched_parallel": {
       "truePositives": 0,

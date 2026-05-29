@@ -67,6 +67,8 @@ export interface Suggestion {
   evidence?: string[];
   reviewedAt?: string;
   pricingClass?: "paid" | "free" | "unknown";
+  sources?: string[];
+  costImpactUsd?: number | null;
 }
 
 export interface ScanSummary {

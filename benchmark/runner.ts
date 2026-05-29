@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { loadExpectedJson } from "./schema";
-import { computeMetrics, aggregate, type DetectedEndpoint, type DetectedFinding, type MetricsReport } from "./metrics";
+import { computeMetrics, aggregate, sortFindingMetricsByType, type DetectedEndpoint, type DetectedFinding, type MetricsReport } from "./metrics";
 import { formatMarkdownReport, formatConsoleReport } from "./report";
 
 const execFileAsync = promisify(execFile);
@@ -203,7 +203,7 @@ async function main(): Promise<void> {
       providerAttributionAccuracy: report.providerAttributionAccuracy,
       findingPrecision: report.findingPrecision,
       findingRecall: report.findingRecall,
-      findingMetricsByType: report.findingMetricsByType,
+      findingMetricsByType: sortFindingMetricsByType(report.findingMetricsByType),
     }, null, 2) + "\n");
     console.log(formatConsoleReport(report, null));
     console.log(`\nBaseline updated: ${args.baselinePath}`);
