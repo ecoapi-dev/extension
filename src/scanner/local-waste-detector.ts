@@ -452,7 +452,11 @@ function dedupeFindings(findings: Array<LocalWasteFinding | null>): LocalWasteFi
   const deduped = new Map<string, LocalWasteFinding>();
   for (const finding of findings) {
     if (!finding) continue;
-    const key = `${finding.type}:${finding.affectedFile}:${finding.line ?? 0}`;
+    // Key on the detector-specific id so distinct detectors that share a
+    // SuggestionType at the same site stay separate — e.g. batch
+    // (`local-batch-…`) vs inline-parallel (`local-inline_parallel-…`), which
+    // both emit type "batch". Fall back to type:file:line if an id is missing.
+    const key = finding.id || `${finding.type}:${finding.affectedFile}:${finding.line ?? 0}`;
     const existing = deduped.get(key);
     if (!existing || finding.confidence > existing.confidence) {
       deduped.set(key, finding);
