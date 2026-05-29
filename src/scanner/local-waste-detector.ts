@@ -293,6 +293,42 @@ function detectBatchFinding(relativePath: string, site: MatchedCallSite): LocalW
   );
 }
 
+// Inline-parallel: the endpoint itself accepts an n/count parameter (a
+// registry-only signal, e.g. DALL·E `images.generate`), so fanning out one
+// request per item is wasteful. Mirrors the AST inline-parallel detector for
+// the regex-only path (RECOST_DISABLE_AST=1). Distinct from `detectBatchFinding`
+// — uses an `inline_parallel` id so it never collapses with a batch finding.
+function detectInlineParallelFinding(relativePath: string, site: MatchedCallSite): LocalWasteFinding | null {
+  const ext = path.extname(relativePath).toLowerCase();
+  if (!JS_TS_EXTENSIONS.has(ext)) return null;
+  if (!site.match.inlineParallelCapable) return null;
+  if (site.batchGuard) return null;
+  if (!(site.loopDepth > 0 || site.promiseAll || site.mapFanout || site.arrayFanout)) return null;
+
+  const evidence: string[] = [];
+  pushEvidence(evidence, site.loopDepth > 0, "Call executes inside a loop.");
+  pushEvidence(
+    evidence,
+    site.promiseAll || site.mapFanout || site.arrayFanout,
+    "Parallel collection fanout issues one request per item."
+  );
+  evidence.push("This endpoint accepts an n/count parameter that returns multiple results from a single request.");
+  const score = baseScore(site) + 1 - (site.smallBounded ? 1 : 0);
+  const confidence = scoreToConfidence(score, site, true);
+  if (confidence < 0.35) return null;
+  return {
+    id: `local-inline_parallel-${relativePath}:${site.line}`,
+    type: "batch" as SuggestionType,
+    severity: scoreToSeverity(score),
+    confidence,
+    description:
+      "This endpoint accepts an n/count parameter — request multiple results in a single call instead of issuing one request per item.",
+    affectedFile: relativePath,
+    line: site.line,
+    evidence,
+  };
+}
+
 function detectRedundancyFinding(relativePath: string, site: MatchedCallSite, clientInitCount: number): LocalWasteFinding | null {
   const ext = path.extname(relativePath).toLowerCase();
   if (!JS_TS_EXTENSIONS.has(ext)) return null;
@@ -418,6 +454,7 @@ export function detectLocalWasteFindingsInText(relativePath: string, text: strin
   for (const site of callSites) {
     findings.push(detectCacheFinding(relativePath, site));
     findings.push(detectBatchFinding(relativePath, site));
+    findings.push(detectInlineParallelFinding(relativePath, site));
     findings.push(detectRedundancyFinding(relativePath, site, clientInitCount));
     findings.push(detectNPlusOneFinding(relativePath, site));
     findings.push(detectRateLimitFinding(relativePath, site));

@@ -173,6 +173,9 @@ export const openAiCompatibleMatcher: LineMatcher = {
 
       const streaming = reg?.streaming ?? /stream/i.test(action);
       const batchCapable = reg?.batchCapable ?? /batches|batch/.test(path);
+      // No hint-regex fallback: inline-parallel capability (an n/count param)
+      // is a registry-only signal — there is no reliable lexical hint for it.
+      const inlineParallelCapable = reg?.inlineParallelCapable ?? false;
       const cacheCapable = reg?.cacheCapable ?? /responses|chat|assistants|threads/.test(path);
 
       results.push({
@@ -187,6 +190,7 @@ export const openAiCompatibleMatcher: LineMatcher = {
         host,
         streaming,
         batchCapable,
+        inlineParallelCapable,
         cacheCapable,
         rawMatch: match[0],
       });

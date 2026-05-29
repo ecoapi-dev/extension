@@ -22,6 +22,7 @@ export interface ApiCallNode {
   costModel: ApiCallInput["costModel"] | null;
   frequencyClass: ApiCallInput["frequencyClass"] | null;
   batchCapable: boolean;
+  inlineParallelCapable: boolean;
   cacheCapable: boolean;
   streaming: boolean;
   isMiddleware: boolean;

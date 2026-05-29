@@ -39,6 +39,7 @@ export function uniqueMatches(matches: ApiCallMatch[]): ApiCallMatch[] {
       match.host ?? "",
       match.streaming ? "1" : "0",
       match.batchCapable ? "1" : "0",
+      match.inlineParallelCapable ? "1" : "0",
     ].join("|");
 
     if (seen.has(key)) continue;

@@ -99,4 +99,18 @@ run("keeps route definition detection", () => {
   assert.ok(routes.some((r) => r.method === "POST" && r.url === "/webhook/stripe"));
 });
 
+run("emits inlineParallelCapable from the registry for images.generate", () => {
+  const match = pickProvider("await client.images.generate({ prompt: 'a cat', n: 4 });", "openai");
+  assert.ok(match);
+  assert.equal(match?.inlineParallelCapable, true);
+  // images.generate is inline-parallel, not batch-capable (reclassified in #116).
+  assert.notEqual(match?.batchCapable, true);
+});
+
+run("leaves inlineParallelCapable unset for non-inline-parallel methods", () => {
+  const match = pickProvider("await client.chat.completions.create({ model: 'gpt-4.1' });", "openai");
+  assert.ok(match);
+  assert.notEqual(match?.inlineParallelCapable, true);
+});
+
 console.log("All scanner matcher tests passed");
