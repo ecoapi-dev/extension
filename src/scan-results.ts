@@ -492,6 +492,7 @@ export function mergeRemoteAndLocalEndpoints(
       if (!endpoint.costModel && call.costModel) endpoint.costModel = call.costModel;
       endpoint.frequencyClass = pickMostSevereFrequency(endpoint.frequencyClass, call.frequencyClass);
       if (call.batchCapable) endpoint.batchCapable = true;
+      if (call.inlineParallelCapable) endpoint.inlineParallelCapable = true;
       if (call.cacheCapable) endpoint.cacheCapable = true;
       if (call.streaming) endpoint.streaming = true;
       if (call.isMiddleware) endpoint.isMiddleware = true;
@@ -547,6 +548,7 @@ export function mergeRemoteAndLocalEndpoints(
         costModel: call.costModel,
         frequencyClass: call.frequencyClass,
         batchCapable: call.batchCapable,
+        inlineParallelCapable: call.inlineParallelCapable,
         cacheCapable: call.cacheCapable,
         streaming: call.streaming,
         isMiddleware: call.isMiddleware,
@@ -580,6 +582,7 @@ export function mergeRemoteAndLocalEndpoints(
     if (!synthetic.costModel && call.costModel) synthetic.costModel = call.costModel;
     synthetic.frequencyClass = pickMostSevereFrequency(synthetic.frequencyClass, call.frequencyClass);
     if (call.batchCapable) synthetic.batchCapable = true;
+    if (call.inlineParallelCapable) synthetic.inlineParallelCapable = true;
     if (call.cacheCapable) synthetic.cacheCapable = true;
     if (call.streaming) synthetic.streaming = true;
     if (call.isMiddleware) synthetic.isMiddleware = true;

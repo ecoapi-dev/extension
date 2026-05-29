@@ -130,7 +130,7 @@ Two trackers in one file:
 
 Post-foundation work organized into 10 waves + 2 standalones, tracked via `wave/*` + `area/*` GitHub labels. **Execution order is severity-weighted** (platform issues outrank accuracy): Wave 9 → 6 → 7 → 8 → 10 → standalones → accuracy waves (5 → 3 → 1 → 2 → 4).
 
-**As of 2026-05-27:** all platform waves (6–10) are SHIPPED, plus accuracy Wave 3. Remaining open work: accuracy waves **5 → 1 → 2 → 4** + standalones #45/#52.
+**As of 2026-05-29:** all platform waves (6–10) are SHIPPED, plus accuracy Waves 3, 5, and 1. Remaining open work: accuracy waves **2 → 4** + Wave 3 follow-ups #127/#128 + standalones #45/#52.
 
 ## Overall Wave Status
 
@@ -143,10 +143,10 @@ Post-foundation work organized into 10 waves + 2 standalones, tracked via `wave/
 | **10** | Config hygiene | #97, #98 | 🟢 | Shipped via PR [#124](https://github.com/recost-dev/extension/pull/124). |
 | — | Standalone #45 | #45 | ⬜ | Opt-in Project ID persistence — independent feature. |
 | — | Standalone #52 | #52 | ⬜ | Dashboard theming — can defer indefinitely. |
-| **5** | Housekeeping (accuracy) | #118, #119 | ⬜ | Cheapest accuracy work. Both in-repo (benchmark runner + `benchmark.yml`). |
-| **3** | Resolver follow-ups (accuracy) | #114, #115, #116 | 🟢 | Shipped via PR [#126](https://github.com/recost-dev/extension/pull/126). Follow-ups #127 (detection threading) + #128 (dashboard badge). |
-| **1** | Findings quality (accuracy) | #84, #85, #112 | 🟡 | Code complete + reviewed; full benchmark Δ +0.00pp. Awaits manual EDH check of the two UI bits (confidence filter, sources badge). |
-| **2** | Traceability (accuracy) | #81, #113 | ⬜ | Corpus expansion + dual locations. |
+| **5** | Housekeeping (accuracy) | #118, #119 | 🟢 | Both closed 2026-05-27 (benchmark runner sort + D1 CI gate verified). |
+| **3** | Resolver follow-ups (accuracy) | #114, #115, #116 | 🟢 | Shipped via PR [#126](https://github.com/recost-dev/extension/pull/126). Follow-ups #127 (detection threading) + #128 (dashboard badge) landed on `feat/wave3-followups`. |
+| **1** | Findings quality (accuracy) | #84, #85, #112 | 🟢 | All closed 2026-05-28 (C2 dedupe, C3 confidence, CACHE/BATCH_GUARD tightening). |
+| **2** | Traceability (accuracy) | #81, #113 | ⬜ | Corpus expansion + dual locations. Next wave. |
 | **4** | Recall recovery (accuracy) | #117 | ⬜ | Risky — depended on Wave 3 (#116), now unblocked. |
 
 ## Wave 9 — Local-mode IPC architecture (CLOSED)
@@ -232,6 +232,8 @@ Post-foundation work organized into 10 waves + 2 standalones, tracked via `wave/
 
 > Append `YYYY-MM-DD HH:MM — <one-line update>`. Newest at top.
 
+- 2026-05-29 — **Wave 3 follow-ups #127 + #128 landed** on `feat/wave3-followups`. #127 (`a1972bf`): threaded `inlineParallelCapable` through the regex pattern path (`openai-compatible.ts` emit, registry-only), the regex-only `local-waste-detector.ts` (new inline-parallel finding with the n/count suggestion, distinct `inline_parallel` id), the pattern dedup key (`utils.ts`), and the intelligence graph (`ApiCallNode` + `builder.ts`). #128 (`e9d7d7e`): `EndpointRecord` in both UI type files + `Endpoints.tsx` inline-parallel chip + `scan-results.ts` population at all 3 endpoint-construction sites — restores the indicator DALL·E lost when #116 reclassified `images.generate` off `batchCapable`. Gates: full `test:scanner` green (3 new tests), `build` (webview+ext) clean, benchmark Δ +0.00pp on all 5 metrics. **Caveat:** the web dashboard reads endpoints from the API, whose schema has no `inline_parallel` column — dashboard chip needs an api-repo migration to light up; VS Code webview badge works now. Next: accuracy Wave 2 (#113 → #81).
+- 2026-05-29 — **Tracker reconciliation.** Waves 5 (#118/#119, closed 05-27) and 1 (#84/#85/#112, closed 05-28) marked 🟢 — both had merged but were never reflected here. Remaining accuracy work is now Wave 2 → 4.
 - 2026-05-28 — **Wave 1 (findings quality) code-complete** on `claude/superpowers-plugins-skills-1Yaij` (plan `docs/superpowers/plans/2026-05-28-wave1-findings-quality.md`). #112: comment-stripped guard window stops the `CACHE_GUARD`/`BATCH_GUARD` literal-word leak (URL-safe `//` lookbehind). #85: detectors carry a structural `riskScore`; single `deriveSeverity()` (hybrid floor+amplifier, not pure confidence×cost) + `computeCostImpact()` applied at all 5 `Suggestion`-construction sites; `costImpactUsd` internal-only; confidence filter in the sidebar. #84: `collapseSuggestions()` dedupes by `type::file::endpoint|line-bucket`, unions `sources`, max confidence, AI-preferred description; `mergeAiSuggestions` collapses instead of dropping; "detected by N sources" badge. Subagent-driven (impl + spec + code-quality review per unit). Gates: full `test:scanner` green, full benchmark Δ +0.00pp on all 5 metrics. **Pending:** (1) manual EDH check of the two UI bits; (2) follow-ups — pre-existing `scope === "internal"` guard divergence between the two `buildAggressiveSuggestions` copies (scan-results.ts lacks it), and dead `SourceBadge` + duplicated badge inline-style in `ResultsPage.tsx` (extract a shared secondary-badge).
 - 2026-05-27 — **Wave 3 shipped (PR #126)** — #114/#115/#116 closed. Subagent-driven across 2 parallel worktree tracks; gates green (test:scanner, build:ext, benchmark Δ +0.00pp). Follow-ups filed: #127 (detection threading) + #128 (dashboard badge). **Tracker reconciliation:** also corrected stale statuses — Waves 7 (PR #122), 8 (PR #123), and 10 (PR #124) had merged earlier but were never marked 🟢 here. All platform waves (6–10) now confirmed shipped; remaining work is accuracy waves 5→1→2→4 + standalones.
 - 2026-05-21 — **Wave 7 PR opened (#122).** Closes #92 + #93 as design-resolved via labeling, not reconciliation. 7 commits on `wave7/cost-simulator-labeling` (worktree `../extension-wave7`): shared `EstimateDisclaimer` component, render on Simulate tab, code comments on `LOCAL_PRICING` + `FREQUENCY_CLASS_MULTIPLIERS`, CLAUDE.md "Cost numbers: heuristic vs authoritative" section. All gates green (build, 4/4 tests, D1 Δ +0.00pp). Spec + plan committed to main. Wave 8 (#46/#94/#100) is next per severity order.

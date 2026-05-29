@@ -59,6 +59,18 @@ run("reduces confidence when polling already has backoff and concurrency guards"
   assert.ok((rateLimit?.confidence ?? 1) < 0.75);
 });
 
+run("flags inline-parallel fanout for an n/count-capable endpoint (regex-only path)", () => {
+  const text = [
+    "async function makeThumbnails(prompts) {",
+    "  return Promise.all(prompts.map((prompt) => client.images.generate({ prompt })));",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/lib/thumbnails.ts", text);
+  const inlineParallel = findings.find((finding) => finding.id.includes("inline_parallel"));
+  assert.ok(inlineParallel, "expected an inline-parallel finding for images.generate fanout");
+  assert.match(inlineParallel?.description ?? "", /n\/count parameter/);
+});
+
 run("#112: bare 'cache' in a comment does not suppress a cache finding", () => {
   const text = [
     "// we should cache this someday but do not yet",

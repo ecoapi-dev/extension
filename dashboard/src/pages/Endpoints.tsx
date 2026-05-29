@@ -76,6 +76,7 @@ function EndpointCard({ ep }: { ep: EndpointRecord }) {
   const caps: string[] = [];
   if (ep.streaming) caps.push('stream');
   if (ep.batchCapable) caps.push('batch');
+  if (ep.inlineParallelCapable) caps.push('inline-parallel');
   if (ep.cacheCapable) caps.push('cache');
   if (ep.isMiddleware) caps.push('middleware');
 

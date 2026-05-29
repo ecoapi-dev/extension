@@ -22,6 +22,7 @@ export interface ApiCallMatch {
   loopContext?: boolean;
   streaming?: boolean;
   batchCapable?: boolean;
+  inlineParallelCapable?: boolean;
   cacheCapable?: boolean;
   inferredCostRisk?: string[];
   rawMatch?: string;

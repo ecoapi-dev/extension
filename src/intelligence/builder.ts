@@ -197,6 +197,7 @@ export function buildRepoIntelligenceSnapshot(
         costModel: call.costModel ?? null,
         frequencyClass: call.frequencyClass ?? null,
         batchCapable: Boolean(call.batchCapable),
+        inlineParallelCapable: Boolean(call.inlineParallelCapable),
         cacheCapable: Boolean(call.cacheCapable),
         streaming: Boolean(call.streaming),
         isMiddleware: Boolean(call.isMiddleware),

@@ -25,6 +25,7 @@ run("buildRepoIntelligenceSnapshot normalizes paths, stores null providers, and 
         library: "openai",
         cacheCapable: false,
         batchCapable: false,
+        inlineParallelCapable: true,
       },
       {
         file: "./src/payments.ts",
@@ -127,11 +128,14 @@ run("buildRepoIntelligenceSnapshot normalizes paths, stores null providers, and 
   assert.equal(workerCall.provider, "openai");
   assert.equal(workerCall.library, "openai");
   assert.equal(workerCall.filePath, "src/worker.ts");
+  assert.equal(workerCall.inlineParallelCapable, true);
 
   const stripeCall = Object.values(snapshot.apiCalls).find((apiCall) => apiCall.filePath === "src/payments.ts" && apiCall.line === 15);
   assert.ok(stripeCall);
   assert.equal(stripeCall.provider, "stripe");
   assert.equal(stripeCall.library, "stripe");
+  // Absent on input → coerced to false (parallels batchCapable).
+  assert.equal(stripeCall.inlineParallelCapable, false);
 
   const regexOnlyCall = Object.values(snapshot.apiCalls).find((apiCall) => apiCall.filePath === "src/regex-only.ts" && apiCall.line === 22);
   assert.ok(regexOnlyCall);
