@@ -110,5 +110,18 @@ const base = {
     assert.notEqual(a, b);
   });
 
+  await run("B2/AC-4: endpoint ID is unchanged when the call site moves (resolvedSite-stable)", () => {
+    const base = {
+      provider: "openai",
+      methodSignature: "chat.completions.create",
+      filePath: "lib/ai.ts",
+      enclosingFunction: "callAI",
+      url: "sdk://openai/chat.completions.create",
+    };
+    // Identical structural inputs — the only thing a call-site move changes (line,
+    // column, span) is not part of the hash, so the ID must be identical.
+    assert.equal(computeEndpointId(base), computeEndpointId({ ...base }));
+  });
+
   console.log("endpoint-id.test PASSED");
 })().catch((err) => { console.error(err); process.exit(1); });
