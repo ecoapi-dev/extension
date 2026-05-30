@@ -277,8 +277,6 @@ function detectInlineParallel(
   if (!BATCH_LOOP_FREQS.has(match.frequency)) return null;
   if (!match.inlineParallelCapable) return null;
   if (hasGuardInWindow(source, match.line, BATCH_GUARD)) return null;
-  // Array.from({ length: N }) is intentional bounded replication — not naive fan-out.
-  if (match.frequency === "parallel" && hasGuardInWindow(source, match.line, BOUNDED_REPLICATION)) return null;
 
   const evidence: string[] = [
     `Call executes in a "${match.frequency}" context — each iteration issues a separate request.`,
@@ -304,7 +302,7 @@ function detectInlineParallel(
 
   return {
     id: `local-inline_parallel-${filePath}:${match.line}`,
-    type: "batch" as SuggestionType,
+    type: "unbatched_parallel" as SuggestionType,
     severity: scoreToSeverity(score),
     riskScore: score,
     confidence,
