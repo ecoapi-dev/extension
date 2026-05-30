@@ -82,7 +82,8 @@ export type SuggestionType =
   | "redundancy"
   | "n_plus_one"
   | "rate_limit"
-  | "concurrency_control";
+  | "concurrency_control"
+  | "unbatched_parallel";
 
 export type Severity = "high" | "medium" | "low";
 

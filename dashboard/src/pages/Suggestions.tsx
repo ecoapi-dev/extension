@@ -16,6 +16,7 @@ const severityConfig: Record<Severity, { color: string; bg: string; icon: Elemen
 const typeIcons: Partial<Record<SuggestionType, ElementType>> = {
   cache:               Archive,
   batch:               Layers,
+  unbatched_parallel:  Layers,
   redundancy:          RefreshCw,
   n_plus_one:          Layers,
   rate_limit:          Zap,
@@ -25,6 +26,7 @@ const typeIcons: Partial<Record<SuggestionType, ElementType>> = {
 const typeLabels: Record<string, string> = {
   cache:               'Cacheable',
   batch:               'Batchable',
+  unbatched_parallel:  'Unbatched Parallel',
   redundancy:          'Redundant Call',
   n_plus_one:          'N+1 Query',
   rate_limit:          'Rate Limit Risk',

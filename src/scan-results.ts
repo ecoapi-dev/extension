@@ -33,6 +33,7 @@ export const SAVINGS_MULTIPLIERS: Partial<Record<Suggestion["type"], number>> = 
   n_plus_one:          0.35,
   cache:               0.30,
   batch:               0.20,
+  unbatched_parallel:  0.20,
   concurrency_control: 0.22,
 };
 

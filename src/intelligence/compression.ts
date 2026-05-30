@@ -42,12 +42,14 @@ const FINDING_TITLE_BY_TYPE: Record<SuggestionType, string> = {
   redundancy: "Repeated API pattern",
   n_plus_one: "N+1 risk",
   batch: "Batching opportunity",
+  unbatched_parallel: "Unbatched parallel fan-out",
 };
 const FINDING_LABEL_BY_TYPE: Partial<Record<SuggestionType, string>> = {
   rate_limit: "Rate-limit finding",
   concurrency_control: "Concurrency-control finding",
   cache: "Cacheable call without cache",
   redundancy: "Repeated API pattern",
+  unbatched_parallel: "Unbatched parallel fan-out",
 };
 const SEVERITY_WEIGHT: Record<FindingNode["severity"], number> = { high: 3, medium: 2, low: 1 };
 
