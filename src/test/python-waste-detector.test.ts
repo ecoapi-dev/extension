@@ -163,4 +163,110 @@ async def fetch_all(prompts):
 
     assert.deepEqual(findings, []);
   });
+
+  await run(
+    "python waste: same method in two distinct functions creates cross-function batch finding",
+    async () => {
+      const source = `
+import anthropic
+
+_client = anthropic.Anthropic()
+
+def summarize(text: str) -> str:
+    response = _client.messages.create(
+        model="claude-3-haiku-20240307",
+        max_tokens=512,
+        messages=[{"role": "user", "content": text}],
+    )
+    return response.content[0].text
+
+def summarize_with_style(text: str, style: str) -> str:
+    response = _client.messages.create(
+        model="claude-3-haiku-20240307",
+        max_tokens=512,
+        messages=[{"role": "user", "content": f"Summarize in {style} style: {text}"}],
+    )
+    return response.content[0].text
+`;
+
+      const findings = detectPythonWaste(
+        [
+          makeMatch({
+            provider: "anthropic",
+            packageName: "anthropic",
+            methodChain: "messages.create",
+            line: 7,
+            frequency: "single",
+            enclosingFunction: "summarize",
+          }),
+          makeMatch({
+            provider: "anthropic",
+            packageName: "anthropic",
+            methodChain: "messages.create",
+            line: 16,
+            frequency: "single",
+            enclosingFunction: "summarize_with_style",
+          }),
+        ],
+        source,
+        "/project/src/anthropic_helper.py"
+      );
+
+      const batchFindings = findings.filter((f) => f.type === "batch");
+      assert.equal(batchFindings.length, 1, "expected exactly one batch finding");
+      assert.equal(batchFindings[0].line, 7, "batch finding should be anchored at the earliest line");
+    }
+  );
+
+  await run(
+    "python waste: different methodChains in two functions do NOT create a cross-function batch finding",
+    async () => {
+      const source = `
+import anthropic
+
+_client = anthropic.Anthropic()
+
+def summarize(text: str) -> str:
+    response = _client.messages.create(
+        model="claude-3-haiku-20240307",
+        messages=[{"role": "user", "content": text}],
+    )
+    return response.content[0].text
+
+def generate_image(prompt: str) -> str:
+    response = _client.completions.create(
+        model="claude-instant-1",
+        max_tokens_to_sample=100,
+        prompt=prompt,
+    )
+    return response.completion
+`;
+
+      const findings = detectPythonWaste(
+        [
+          makeMatch({
+            provider: "anthropic",
+            packageName: "anthropic",
+            methodChain: "messages.create",
+            line: 7,
+            frequency: "single",
+            enclosingFunction: "summarize",
+          }),
+          makeMatch({
+            provider: "anthropic",
+            packageName: "anthropic",
+            methodChain: "completions.create",
+            line: 14,
+            frequency: "single",
+            enclosingFunction: "generate_image",
+          }),
+        ],
+        source,
+        "/project/src/anthropic_helper.py"
+      );
+
+      const batchFindings = findings.filter((f) => f.type === "batch");
+      assert.equal(batchFindings.length, 0, "different methodChains should not produce a batch finding");
+    }
+  );
 })();

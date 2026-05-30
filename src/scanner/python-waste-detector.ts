@@ -278,6 +278,47 @@ function detectSequentialBatching(matches: ClassifiedMatch[], lines: string[], f
     }
   }
 
+  // Second pass: cross-function batching. The same (providerKey, methodChain)
+  // called in ≥2 distinct functions in one module is batchable even though the
+  // calls live in different functions. Keying on methodChain (not just provider)
+  // is the FP guard — different SDKs / different methods never merge (PR-3 trap).
+  const byMethod = new Map<string, { providerKey: string; methodChain: string; matches: ClassifiedMatch[] }>();
+  for (const classified of matches) {
+    if (!NON_LOOP_FREQUENCIES.has(classified.match.frequency)) continue;
+    const methodChain = classified.match.methodChain ?? "";
+    if (!methodChain) continue;
+    const key = `${classified.providerKey}::${methodChain}`;
+    const bucket = byMethod.get(key) ?? { providerKey: classified.providerKey, methodChain, matches: [] };
+    bucket.matches.push(classified);
+    byMethod.set(key, bucket);
+  }
+
+  for (const { providerKey, methodChain, matches: group } of byMethod.values()) {
+    const fns = new Set(group.map((c) => c.match.enclosingFunction ?? "<module>"));
+    if (fns.size < 2) continue; // needs ≥2 distinct functions
+    const sorted = [...group].sort((a, b) => a.match.line - b.match.line);
+    const firstLine = sorted[0].match.line;
+    const lastLine = sorted[sorted.length - 1].match.line;
+    const window = betweenWindow(lines, firstLine, lastLine, 5);
+    if (ASYNCIO_GATHER.test(window) || CONCURRENCY_GUARD.test(window)) continue;
+    // Dedupe: skip if the function-scoped pass already emitted a batch finding at this line.
+    if (findings.some((f) => f.type === "batch" && f.line === firstLine)) continue;
+    findings.push(
+      makeFinding(
+        "batch",
+        filePath,
+        firstLine,
+        4,
+        0.7,
+        `${group.length} calls to "${methodChain}" across multiple functions in this module — consolidate into a single batched call.`,
+        [
+          `"${methodChain}" (${providerKey}) is called in ${fns.size} functions: lines ${sorted.map((c) => c.match.line).join(", ")}.`,
+          "Calls share a provider and method, so they can be batched into one request.",
+        ]
+      )
+    );
+  }
+
   return findings;
 }
 
