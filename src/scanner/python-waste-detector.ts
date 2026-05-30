@@ -298,9 +298,14 @@ function detectSequentialBatching(matches: ClassifiedMatch[], lines: string[], f
     if (fns.size < 2) continue; // needs ≥2 distinct functions
     const sorted = [...group].sort((a, b) => a.match.line - b.match.line);
     const firstLine = sorted[0].match.line;
-    const lastLine = sorted[sorted.length - 1].match.line;
-    const window = betweenWindow(lines, firstLine, lastLine, 5);
-    if (ASYNCIO_GATHER.test(window) || CONCURRENCY_GUARD.test(window)) continue;
+    // Check each call site's immediate neighborhood rather than the whole inter-function
+    // span — the cross-function group can cover hundreds of lines, and a broad
+    // CONCURRENCY_GUARD match anywhere between would wrongly suppress a real finding.
+    const anyGuarded = group.some((c) => {
+      const w = surroundingWindow(lines, c.match.line, 5);
+      return ASYNCIO_GATHER.test(w) || CONCURRENCY_GUARD.test(w);
+    });
+    if (anyGuarded) continue;
     // Dedupe: skip if the function-scoped pass already emitted a batch finding at this line.
     if (findings.some((f) => f.type === "batch" && f.line === firstLine)) continue;
     findings.push(
@@ -309,6 +314,8 @@ function detectSequentialBatching(matches: ClassifiedMatch[], lines: string[], f
         filePath,
         firstLine,
         4,
+        // Intentionally slightly below the first pass's 0.73 — cross-function
+        // co-occurrence is weaker evidence than calls in the same function body.
         0.7,
         `${group.length} calls to "${methodChain}" across multiple functions in this module — consolidate into a single batched call.`,
         [

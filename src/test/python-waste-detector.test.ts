@@ -219,6 +219,68 @@ def summarize_with_style(text: str, style: str) -> str:
   );
 
   await run(
+    "python waste: cross-function batch is suppressed when a concurrency guard appears near one call site",
+    async () => {
+      // The semaphore is within ~5 lines of the call in process_batch, so
+      // surroundingWindow(lines, 14, 5) will include it and suppress the finding.
+      const source = `
+import anthropic
+import asyncio
+
+_client = anthropic.Anthropic()
+semaphore = asyncio.Semaphore(5)
+
+def summarize(text: str) -> str:
+    response = _client.messages.create(
+        model="claude-3-haiku-20240307",
+        max_tokens=512,
+        messages=[{"role": "user", "content": text}],
+    )
+    return response.content[0].text
+
+async def process_batch(texts):
+    async with semaphore:
+        response = _client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=512,
+            messages=[{"role": "user", "content": texts[0]}],
+        )
+    return response.content[0].text
+`;
+
+      const findings = detectPythonWaste(
+        [
+          makeMatch({
+            provider: "anthropic",
+            packageName: "anthropic",
+            methodChain: "messages.create",
+            line: 9,
+            frequency: "single",
+            enclosingFunction: "summarize",
+          }),
+          makeMatch({
+            provider: "anthropic",
+            packageName: "anthropic",
+            methodChain: "messages.create",
+            line: 18,
+            frequency: "single",
+            enclosingFunction: "process_batch",
+          }),
+        ],
+        source,
+        "/project/src/anthropic_helper.py"
+      );
+
+      const batchFindings = findings.filter((f) => f.type === "batch");
+      assert.equal(
+        batchFindings.length,
+        0,
+        "cross-function batch should be suppressed when a concurrency guard is near one call site"
+      );
+    }
+  );
+
+  await run(
     "python waste: different methodChains in two functions do NOT create a cross-function batch finding",
     async () => {
       const source = `
