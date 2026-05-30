@@ -22,6 +22,8 @@ export interface ApiCallInput {
   streaming?: boolean;
   isMiddleware?: boolean;
   crossFileOrigin?: { file: string; functionName: string } | null;
+  /** Dual-location trace. Set by the AST path for cross-file calls; undefined otherwise. */
+  callTrace?: import("../scanner/call-trace").CallTrace;
 }
 
 export interface ScanSummary {
