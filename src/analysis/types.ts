@@ -76,6 +76,8 @@ export interface EndpointCallSite {
   // Enriched fields from AST engine
   frequencyClass?: string;
   crossFileOrigin?: { file: string; functionName: string } | null;
+  /** Dual-location trace for this call site. Degenerate (hops=0) for direct calls. */
+  callTrace?: import("../scanner/call-trace").CallTrace;
 }
 
 export type SuggestionType =

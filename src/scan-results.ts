@@ -3,6 +3,8 @@ import type { LocalWasteFinding } from "./scanner/local-waste-detector";
 import { classifyEndpointScope, detectEndpointProvider } from "./scanner/endpoint-classification";
 import { estimateLocalMonthlyCost } from "./intelligence/cost-utils";
 import { computeEndpointId } from "./scanner/endpoint-id";
+import { directTrace } from "./scanner/call-trace";
+import { pointSpan } from "./scanner/source-span";
 import { FREQUENCY_CLASS_MULTIPLIERS } from "./simulator/engine";
 
 export interface FinalScanResults {
@@ -486,6 +488,7 @@ export function mergeRemoteAndLocalEndpoints(
           frequency: call.frequency,
           frequencyClass: call.frequencyClass,
           crossFileOrigin: call.crossFileOrigin ?? null,
+          callTrace: call.callTrace ?? directTrace(call.file, call.span ?? pointSpan(call.line)),
         });
       }
       if (!endpoint.methodSignature && call.methodSignature) endpoint.methodSignature = call.methodSignature;
@@ -540,6 +543,7 @@ export function mergeRemoteAndLocalEndpoints(
           frequency: call.frequency,
           frequencyClass: call.frequencyClass,
           crossFileOrigin: call.crossFileOrigin ?? null,
+          callTrace: call.callTrace ?? directTrace(call.file, call.span ?? pointSpan(call.line)),
         }],
         callsPerDay,
         monthlyCost: estimateLocalMonthlyCost(provider, callsPerDay, call.methodSignature, call.url) ?? 0,
@@ -572,6 +576,7 @@ export function mergeRemoteAndLocalEndpoints(
         frequency: call.frequency,
         frequencyClass: call.frequencyClass,
         crossFileOrigin: call.crossFileOrigin ?? null,
+        callTrace: call.callTrace ?? directTrace(call.file, call.span ?? pointSpan(call.line)),
       });
     }
     if (call.frequency === "per-request") {
