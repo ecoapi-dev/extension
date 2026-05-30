@@ -242,78 +242,81 @@ export type SuggestionType = "cache" | "batch" | "redundancy" | "n_plus_one" | "
 
 Add `| "unbatched_parallel"` to the `SuggestionType` union ending at line 105 (after `| "concurrency_control"`, keeping the trailing semicolon on the last line).
 
-- [ ] **Step 4: Verify the build now FAILS with exhaustiveness errors**
+- [ ] **Step 4: Verify the build now FAILS with an exhaustiveness error**
 
 Run: `npm run build:ext`
-Expected: TypeScript errors at the `Record<SuggestionType, ...>` maps that don't yet have an `unbatched_parallel` key. This failure is the to-do list for B2 — each error is a ripple site.
+Expected: a TypeScript error in `src/intelligence/compression.ts` at `FINDING_TITLE_BY_TYPE` — it is the one `Record<SuggestionType, string>` (fully exhaustive, non-`Partial`) map, so it must gain the new key. **Important:** the other consumer maps below are either `Record<string, ...>` or `Partial<Record<SuggestionType, ...>>`, so the compiler will NOT flag them. They must be updated by hand — the build passing is not proof they're complete.
 
 ### Task B2: Register `unbatched_parallel` in every consumer map
 
 **Files:**
-- `src/scan-results.ts:33-39` (BASE_MULTIPLIERS)
-- `src/intelligence/compression.ts` (two title maps, ~lines 36–48)
-- `webview/src/components/ResultsPage.tsx:17-25` (TYPE_LABELS)
-- `dashboard/src/pages/Suggestions.tsx:17-32` (TYPE_ICONS + TYPE_LABELS)
+- `src/scan-results.ts:31-37` (`SAVINGS_MULTIPLIERS`)
+- `src/intelligence/compression.ts:38-51` (`FINDING_TITLE_BY_TYPE` exhaustive — required; `FINDING_LABEL_BY_TYPE` Partial — optional)
+- `webview/src/components/ResultsPage.tsx:19-29` (`typeLabels`, `Record<string,string>` — manual)
+- `dashboard/src/pages/Suggestions.tsx:16-32` (`typeIcons` Partial + `typeLabels` `Record<string,string>` — manual)
 
 - [ ] **Step 1: Savings multiplier — `src/scan-results.ts`**
 
 The table currently reads:
 ```ts
-  redundancy: 0.35,
-  n_plus_one: 0.3,
-  cache: 0.2,
-  batch: 0.18,
+export const SAVINGS_MULTIPLIERS: Partial<Record<Suggestion["type"], number>> = {
+  redundancy:          0.40,
+  n_plus_one:          0.35,
+  cache:               0.30,
+  batch:               0.20,
   concurrency_control: 0.22,
-  rate_limit: 0.12,
+};
 ```
 Add an `unbatched_parallel` entry matching `batch` (same cost-savings family):
 ```ts
-  batch: 0.18,
-  unbatched_parallel: 0.18,
+  batch:               0.20,
+  unbatched_parallel:  0.20,
   concurrency_control: 0.22,
 ```
 
-- [ ] **Step 2: Intelligence titles — `src/intelligence/compression.ts`**
+- [ ] **Step 2: Intelligence titles — `src/intelligence/compression.ts`** (this is the build-breaking one)
 
-There are two title maps. In the first (the "gap"/short-title map containing `concurrency_control: "Concurrency-control gap"`), add:
+In `FINDING_TITLE_BY_TYPE` (the exhaustive `Record<SuggestionType, string>` that contains `batch: "Batching opportunity"`), add alongside `batch`:
+```ts
+  batch: "Batching opportunity",
+  unbatched_parallel: "Unbatched parallel fan-out",
+```
+Optionally also add to `FINDING_LABEL_BY_TYPE` (the `Partial` map) for a richer label:
 ```ts
   unbatched_parallel: "Unbatched parallel fan-out",
 ```
-In the second (the map containing `concurrency_control: "Concurrency-control finding"`), add:
-```ts
-  unbatched_parallel: "Unbatched parallel fan-out",
-```
-(Add the key alongside the existing `batch` entry in each map so it groups visually with batching.)
 
 - [ ] **Step 3: Webview label — `webview/src/components/ResultsPage.tsx`**
 
-`TYPE_LABELS` currently:
+`typeLabels` (a `Record<string, string>`) currently:
 ```ts
-const TYPE_LABELS: Record<string, string> = {
-  cache: "cache",
-  redundancy: "redundancy",
+const typeLabels: Record<string, string> = {
   n_plus_one: "n+1",
-  rate_limit: "rate limit",
+  cache: "cache",
   batch: "batch",
+  redundancy: "redundancy",
+  rate_limit: "rate-limit",
   concurrency_control: "concurrency",
+  retry_storm: "retry storm",
+  event_amplification: "event amp",
+  sequential: "sequential",
 };
 ```
-Add:
+Add alongside `batch`:
 ```ts
   batch: "batch",
   unbatched_parallel: "unbatched parallel",
-  concurrency_control: "concurrency",
 ```
 
 - [ ] **Step 4: Dashboard icon + label — `dashboard/src/pages/Suggestions.tsx`**
 
-In `TYPE_ICONS` (currently maps `batch: Layers`), add `unbatched_parallel: Layers,`.
-In `TYPE_LABELS` (currently maps `batch: 'Batch Calls'`), add `unbatched_parallel: 'Unbatched Parallel',`.
+In `typeIcons` (`Partial<Record<SuggestionType, ElementType>>`, currently maps `batch: Layers`), add `unbatched_parallel:    Layers,`.
+In `typeLabels` (`Record<string, string>`, currently maps `batch: 'Batchable'`), add `unbatched_parallel:  'Unbatched Parallel',`.
 
-- [ ] **Step 5: Verify the build now PASSES**
+- [ ] **Step 5: Verify the full build passes**
 
 Run: `npm run build`
-Expected: clean (dashboard + webview + extension). If any `Record<SuggestionType, ...>` error remains, that map still needs the key — add it.
+Expected: clean (dashboard + webview + extension). The compression exhaustiveness error from B1 Step 4 is resolved; the manual maps (Steps 1, 3, 4) are filled even though the compiler didn't force them.
 
 - [ ] **Step 6: Commit the type plumbing**
 
