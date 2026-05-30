@@ -278,54 +278,6 @@ function detectSequentialBatching(matches: ClassifiedMatch[], lines: string[], f
     }
   }
 
-  // Second pass: cross-function batching. The same (providerKey, methodChain)
-  // called in ≥2 distinct functions in one module is batchable even though the
-  // calls live in different functions. Keying on methodChain (not just provider)
-  // is the FP guard — different SDKs / different methods never merge (PR-3 trap).
-  const byMethod = new Map<string, { providerKey: string; methodChain: string; matches: ClassifiedMatch[] }>();
-  for (const classified of matches) {
-    if (!NON_LOOP_FREQUENCIES.has(classified.match.frequency)) continue;
-    const methodChain = classified.match.methodChain ?? "";
-    if (!methodChain) continue;
-    const key = `${classified.providerKey}::${methodChain}`;
-    const bucket = byMethod.get(key) ?? { providerKey: classified.providerKey, methodChain, matches: [] };
-    bucket.matches.push(classified);
-    byMethod.set(key, bucket);
-  }
-
-  for (const { providerKey, methodChain, matches: group } of byMethod.values()) {
-    const fns = new Set(group.map((c) => c.match.enclosingFunction ?? "<module>"));
-    if (fns.size < 2) continue; // needs ≥2 distinct functions
-    const sorted = [...group].sort((a, b) => a.match.line - b.match.line);
-    const firstLine = sorted[0].match.line;
-    // Check each call site's immediate neighborhood rather than the whole inter-function
-    // span — the cross-function group can cover hundreds of lines, and a broad
-    // CONCURRENCY_GUARD match anywhere between would wrongly suppress a real finding.
-    const anyGuarded = group.some((c) => {
-      const w = surroundingWindow(lines, c.match.line, 5);
-      return ASYNCIO_GATHER.test(w) || CONCURRENCY_GUARD.test(w);
-    });
-    if (anyGuarded) continue;
-    // Dedupe: skip if the function-scoped pass already emitted a batch finding at this line.
-    if (findings.some((f) => f.type === "batch" && f.line === firstLine)) continue;
-    findings.push(
-      makeFinding(
-        "batch",
-        filePath,
-        firstLine,
-        4,
-        // Intentionally slightly below the first pass's 0.73 — cross-function
-        // co-occurrence is weaker evidence than calls in the same function body.
-        0.7,
-        `${group.length} calls to "${methodChain}" across multiple functions in this module — consolidate into a single batched call.`,
-        [
-          `"${methodChain}" (${providerKey}) is called in ${fns.size} functions: lines ${sorted.map((c) => c.match.line).join(", ")}.`,
-          "Calls share a provider and method, so they can be batched into one request.",
-        ]
-      )
-    );
-  }
-
   return findings;
 }
 

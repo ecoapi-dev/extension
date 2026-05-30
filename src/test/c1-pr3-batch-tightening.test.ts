@@ -47,13 +47,13 @@ function buildFixtureAccess(fixtureDir: string, fileNames: string[]): ScanFileAc
     );
   });
 
-  await run("Python calls with DIFFERENT methodChains across functions do NOT trigger batch finding (FP guard: methodChain equality)", async () => {
+  await run("Python three anthropic calls in DIFFERENT functions do NOT trigger batch finding", async () => {
     const access = buildFixtureAccess(fixtureDir, ["py_diff_functions.py"]);
     const findings = await detectLocalWastePatternsInFiles(access);
     const batchFindings = findings.filter(f => f.type === "batch");
     assert.equal(
       batchFindings.length, 0,
-      `expected 0 batch findings on cross-function Python calls with different methodChains, got ${batchFindings.length}: ${JSON.stringify(batchFindings.map(f => ({ file: f.affectedFile, line: f.line, ev: f.evidence })))}`
+      `expected 0 batch findings on cross-function Python calls, got ${batchFindings.length}: ${JSON.stringify(batchFindings.map(f => ({ file: f.affectedFile, line: f.line, ev: f.evidence })))}`
     );
   });
 

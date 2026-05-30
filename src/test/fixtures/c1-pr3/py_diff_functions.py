@@ -1,13 +1,7 @@
-"""Negative case: different methodChains across functions are not batchable together.
-
-Under Wave 4 semantics the FP guard is exact-methodChain equality: calls to different
-methods on the same provider land in separate buckets and never merge into one batch
-finding even if there are ≥2 distinct functions.
-"""
+"""Negative case: three calls in three different functions are not groupable."""
 import anthropic
 
 _client = anthropic.Anthropic()
-
 
 def summarize(text: str) -> str:
     return _client.messages.create(
@@ -16,19 +10,16 @@ def summarize(text: str) -> str:
         messages=[{"role": "user", "content": f"Summarize: {text}"}],
     ).content[0].text
 
-
-def count_tokens(text: str) -> int:
-    result = _client.messages.count_tokens(
+def translate(text: str, lang: str) -> str:
+    return _client.messages.create(
         model="claude-3-haiku-20240307",
-        messages=[{"role": "user", "content": text}],
-    )
-    return result.input_tokens
-
+        max_tokens=512,
+        messages=[{"role": "user", "content": f"Translate to {lang}: {text}"}],
+    ).content[0].text
 
 def explain(text: str) -> str:
-    result = _client.beta.messages.create(
+    return _client.messages.create(
         model="claude-3-haiku-20240307",
         max_tokens=512,
         messages=[{"role": "user", "content": f"Explain: {text}"}],
     ).content[0].text
-    return result
