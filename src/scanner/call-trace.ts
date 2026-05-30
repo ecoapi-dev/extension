@@ -24,5 +24,6 @@ export interface CallTrace {
 /** Build a degenerate trace for a direct (non-propagated) call. */
 export function directTrace(file: string, span: SourceSpan): CallTrace {
   const loc: ResolvedLocation = { file, span };
-  return { callSite: loc, resolvedSite: loc, hops: 0 };
+  // Distinct object per site so a future in-place mutation of one can't alias the other.
+  return { callSite: loc, resolvedSite: { ...loc }, hops: 0 };
 }
