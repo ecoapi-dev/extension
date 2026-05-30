@@ -64,6 +64,11 @@ export interface AstCallMatch {
   crossFile?: boolean;
   /** Absolute path of the file where the API call actually lives (for cross-file matches). */
   sourceFile?: string;
+  /**
+   * Dual-location trace, set ONLY for cross-file-propagated matches. Absent for
+   * direct matches (downstream defaults to a degenerate `directTrace`).
+   */
+  trace?: import("../scanner/call-trace").CallTrace;
 }
 
 /** Per-class metadata collected during scanning (for cross-file use in 3.5). */
