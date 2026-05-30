@@ -489,14 +489,40 @@ function ProviderGroup({ provider, eps, pColor }: { provider: string; eps: Endpo
               )}
             </div>
             {fileName && filePath && (
-              <button
-                className="eco-btn-link"
-                style={{ fontSize: "10px", opacity: 0.7, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                title={filePath}
-                onClick={() => postMessage({ type: "openFile", file: filePath, line: site?.line, span: site?.span })}
-              >
-                {fileName}{site?.line ? `:${site.line}` : ""}
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+                <button
+                  className="eco-btn-link"
+                  style={{ fontSize: "10px", opacity: 0.7, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}
+                  title={site?.callTrace?.callSite.file ?? filePath}
+                  onClick={() =>
+                    postMessage({
+                      type: "openFile",
+                      file: site?.callTrace?.callSite.file ?? filePath,
+                      line: site?.callTrace?.callSite.span.startLine ?? site?.line,
+                      span: site?.callTrace?.callSite.span ?? site?.span,
+                    })
+                  }
+                >
+                  {fileName}{(site?.callTrace?.callSite.span.startLine ?? site?.line) ? `:${site?.callTrace?.callSite.span.startLine ?? site?.line}` : ""}
+                </button>
+                {site?.callTrace && site.callTrace.hops > 0 && (
+                  <button
+                    className="eco-btn-link"
+                    style={{ fontSize: "10px", opacity: 0.55, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}
+                    title={`Underlying call: ${site.callTrace.resolvedSite.file}:${site.callTrace.resolvedSite.span.startLine}`}
+                    onClick={() =>
+                      postMessage({
+                        type: "openFile",
+                        file: site.callTrace!.resolvedSite.file,
+                        line: site.callTrace!.resolvedSite.span.startLine,
+                        span: site.callTrace!.resolvedSite.span,
+                      })
+                    }
+                  >
+                    ↳ underlying call ({site.callTrace.resolvedSite.file.split("/").pop()}:{site.callTrace.resolvedSite.span.startLine})
+                  </button>
+                )}
+              </div>
             )}
           </div>
         );
