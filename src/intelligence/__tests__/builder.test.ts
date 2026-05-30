@@ -236,3 +236,30 @@ run("buildRepoIntelligenceSnapshot keeps distinct same-line API calls with deter
   assert.equal(new Set(calls.map((apiCall) => apiCall.id)).size, 2);
   assert.ok(calls.every((apiCall) => /^ep_[a-z0-9]+(?:_L\d+)?$/.test(apiCall.id)));
 });
+
+run("B2: ApiCallNode carries the callTrace from its ApiCallInput", () => {
+  const snapshot = buildRepoIntelligenceSnapshot({
+    apiCalls: [
+      {
+        file: "app.ts",
+        line: 3,
+        span: { startLine: 3, startColumn: 0, endLine: 3, endColumn: 20 },
+        method: "POST",
+        url: "https://api.openai.com/v1/chat/completions",
+        library: "openai",
+        provider: "openai",
+        methodSignature: "chat.completions.create",
+        callTrace: {
+          callSite: { file: "app.ts", span: { startLine: 3, startColumn: 0, endLine: 3, endColumn: 20 } },
+          resolvedSite: { file: "lib/ai.ts", span: { startLine: 4, startColumn: 2, endLine: 4, endColumn: 60 } },
+          hops: 1,
+        },
+      },
+    ],
+    findings: [],
+  });
+  const node = Object.values(snapshot.apiCalls)[0];
+  assert.ok(node.callTrace, "node should carry a callTrace");
+  assert.equal(node.callTrace!.hops, 1);
+  assert.equal(node.callTrace!.resolvedSite.file, "lib/ai.ts");
+});
