@@ -348,6 +348,7 @@ async function handle() {
   assert.ok(trace, "propagated match should carry a trace");
   assert.equal(trace!.hops, 1, "single wrapper hop");
   assert.equal(trace!.callSite.file, "app.ts", "callSite is the caller file");
+  assert.equal(trace!.callSite.span.startLine, 3, "callSite span points at the caller's call line (not the callee's)");
   assert.equal(trace!.resolvedSite.file, "lib/ai.ts", "resolvedSite is the callee file");
   assert.equal(trace!.resolvedSite.span.startLine, 4, "resolvedSite span points at the SDK call line");
 });
