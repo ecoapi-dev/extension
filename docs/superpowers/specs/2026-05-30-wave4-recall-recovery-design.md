@@ -55,7 +55,7 @@ Two coupled changes.
 **Type ripple** (traced from how `concurrency_control` threads through the codebase) — register `unbatched_parallel` in:
 
 - **Union (3 declarations):** `src/analysis/types.ts`, `webview/src/types.ts`, `dashboard/src/lib/types.ts`
-- **Savings multiplier:** `src/scan-results.ts` `BASE_MULTIPLIERS` — value `0.18`, matching `batch`
+- **Savings multiplier:** `src/scan-results.ts` `BASE_MULTIPLIERS` — value `0.20`, matching `batch`
 - **Labels / icons:** `webview/src/components/ResultsPage.tsx` `TYPE_LABELS` (e.g. `"unbatched parallel"`); `dashboard/src/pages/Suggestions.tsx` (icon map + label map)
 - **Intelligence titles:** `src/intelligence/compression.ts` (title maps, e.g. "Unbatched parallel fan-out")
 - **Explicitly NOT** added to `RELIABILITY_FINDING_TYPES` in `src/intelligence/scorer.ts` / `src/intelligence/clusters.ts` — it is a cost finding, so it does not contribute to the reliability score.
