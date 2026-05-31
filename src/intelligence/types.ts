@@ -27,6 +27,7 @@ export interface ApiCallNode {
   streaming: boolean;
   isMiddleware: boolean;
   crossFileOrigin: { file: string; functionName: string } | null;
+  callTrace?: import("../scanner/call-trace").CallTrace;
 }
 
 export interface FindingNode {

@@ -155,6 +155,7 @@ function astMatchToApiCallInput(match: AstCallMatch, file: string): ApiCallInput
     streaming: match.streaming,
     isMiddleware: match.isMiddleware,
     crossFileOrigin,
+    callTrace: match.trace,
   };
 }
 

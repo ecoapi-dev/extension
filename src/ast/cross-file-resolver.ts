@@ -17,6 +17,8 @@
 import * as path from "path";
 import type { AstCallMatch, AstScanResult } from "./ast-scanner";
 import { PACKAGE_TO_PROVIDER } from "./ast-scanner";
+import { pointSpan, type SourceSpan } from "../scanner/source-span";
+import type { CallTrace, ResolvedLocation } from "../scanner/call-trace";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -340,8 +342,22 @@ function cloneWithCallerContext(
   callerLoopContext: boolean,
   isMiddleware: boolean,
   calleeFilePath: string,
-  callerFilePath: string
+  callerFilePath: string,
+  callerRelative: string,
+  callerSpan: SourceSpan,
+  resolvedRelative: string
 ): AstCallMatch {
+  // The resolved (underlying SDK) site is the callee's own location, unless the
+  // callee was itself propagated (wrapper-of-a-wrapper), in which case carry its
+  // original resolved site forward and just deepen the hop count.
+  const resolvedSite: ResolvedLocation = callee.trace
+    ? callee.trace.resolvedSite
+    : { file: resolvedRelative, span: callee.span };
+  const trace: CallTrace = {
+    callSite: { file: callerRelative, span: callerSpan },
+    resolvedSite,
+    hops: (callee.trace?.hops ?? 0) + 1,
+  };
   return {
     ...callee,
     line: callerLine,
@@ -350,6 +366,7 @@ function cloneWithCallerContext(
     isMiddleware: isMiddleware || callee.isMiddleware,
     crossFile: true,
     sourceFile: calleeFilePath,
+    trace,
   };
 }
 
@@ -546,6 +563,7 @@ export function runCrossFileResolution(
       for (const { localName, specifier, isDefault } of imports) {
         const resolvedFile = resolveImportPath(callerPath, specifier, normalizedKnown);
         if (!resolvedFile) continue;
+        const resolvedRelative = relativePathByNormalized.get(resolvedFile) ?? resolvedFile;
 
         // Find all call sites in this file that reference the imported name
         const callSites = caller.result.matches.filter((m) => {
@@ -581,13 +599,8 @@ export function runCrossFileResolution(
               tryPush(
                 callerRelative,
                 cloneWithCallerContext(
-                  callee,
-                  site.line,
-                  site.frequency,
-                  site.loopContext,
-                  false,
-                  resolvedFile,
-                  callerPath
+                  callee, site.line, site.frequency, site.loopContext, false,
+                  resolvedFile, callerPath, callerRelative, site.span, resolvedRelative
                 )
               );
             }
@@ -597,7 +610,10 @@ export function runCrossFileResolution(
             for (const callee of calleeMatches) {
               tryPush(
                 callerRelative,
-                cloneWithCallerContext(callee, lineNum, "single", false, false, resolvedFile, callerPath)
+                cloneWithCallerContext(
+                  callee, lineNum, "single", false, false,
+                  resolvedFile, callerPath, callerRelative, pointSpan(lineNum), resolvedRelative
+                )
               );
             }
           }
@@ -611,6 +627,7 @@ export function runCrossFileResolution(
 
         const resolvedFile = resolveImportPath(callerPath, importEntry.specifier, normalizedKnown);
         if (!resolvedFile) continue;
+        const resolvedRelative = relativePathByNormalized.get(resolvedFile) ?? resolvedFile;
 
         const calleeMatches = resolveExportedMatches(
           mwName,
@@ -629,13 +646,8 @@ export function runCrossFileResolution(
           tryPush(
             callerRelative,
             cloneWithCallerContext(
-              callee,
-              useLine ?? callee.line,
-              "single",
-              false,
-              true,
-              resolvedFile,
-              callerPath
+              callee, useLine ?? callee.line, "single", false, true,
+              resolvedFile, callerPath, callerRelative, pointSpan(useLine ?? callee.line), resolvedRelative
             )
           );
         }
@@ -717,6 +729,7 @@ function runFactoryReturnPostPass(
   output: Map<string, AstCallMatch[]>,
   seenKeysByFile: Map<string, Set<string>>
 ): void {
+  const relByNorm = new Map(files.map((f) => [normalizePath(f.filePath), f.relativePath]));
   // Step 1: Build global factory registry
   // globalFactoryRegistry: normalizedFilePath → (fnName → package)
   const globalFactoryRegistry = new Map<string, Map<string, string>>();
@@ -783,6 +796,13 @@ function runFactoryReturnPostPass(
             enclosingFunction: null,
             crossFile: true,
             sourceFile: resolvedFile,
+            trace: {
+              callSite: { file: consumer.relativePath, span: pointSpan(line) },
+              // The factory's own `new X()` span isn't tracked; point at the
+              // resolved file's top as a best-effort underlying location.
+              resolvedSite: { file: relByNorm.get(resolvedFile) ?? resolvedFile, span: pointSpan(1) },
+              hops: 1,
+            },
           });
         }
       }
