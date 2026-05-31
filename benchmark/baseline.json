@@ -3,7 +3,7 @@
   "detectionRecall": 0.5147058823529411,
   "providerAttributionAccuracy": 0.8275862068965517,
   "findingPrecision": 1,
-  "findingRecall": 0.3333333333333333,
+  "findingRecall": 0.6666666666666666,
   "findingMetricsByType": {
     "batch": {
       "truePositives": 0,
@@ -20,11 +20,11 @@
       "recall": 1
     },
     "unbatched_parallel": {
-      "truePositives": 0,
+      "truePositives": 1,
       "falsePositives": 0,
-      "falseNegatives": 1,
+      "falseNegatives": 0,
       "precision": 1,
-      "recall": 0
+      "recall": 1
     }
   }
 }

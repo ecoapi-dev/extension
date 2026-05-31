@@ -14,7 +14,7 @@ import { collectRealProviders } from "./provider-normalization";
 
 const HIGH_FREQUENCY_CLASSES = new Set(["unbounded-loop", "parallel", "polling"]);
 const RELIABILITY_FINDING_TYPES = new Set(["rate_limit", "concurrency_control"]);
-const COST_LEAK_FINDING_TYPES = new Set(["cache", "batch", "n_plus_one", "redundancy"]);
+const COST_LEAK_FINDING_TYPES = new Set(["cache", "batch", "unbatched_parallel", "n_plus_one", "redundancy"]);
 const SEVERITY_WEIGHT: Record<FindingNode["severity"], number> = { high: 3, medium: 2, low: 1 };
 const FREQUENCY_COST_WEIGHT: Record<string, number> = {
   "unbounded-loop": 3,

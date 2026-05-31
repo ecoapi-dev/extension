@@ -69,6 +69,19 @@ run("flags inline-parallel fanout for an n/count-capable endpoint (regex-only pa
   const inlineParallel = findings.find((finding) => finding.id.includes("inline_parallel"));
   assert.ok(inlineParallel, "expected an inline-parallel finding for images.generate fanout");
   assert.match(inlineParallel?.description ?? "", /n\/count parameter/);
+  assert.equal(inlineParallel?.type, "unbatched_parallel", "inline-parallel finding must be unbatched_parallel");
+});
+
+run("regex path flags Array.from bounded-replication fanout as unbatched_parallel (guard removal regression)", () => {
+  const text = [
+    "async function generateVariants(prompt) {",
+    "  return Promise.all(Array.from({ length: 4 }).map(() => openai.images.generate({ prompt })));",
+    "}",
+  ].join("\n");
+  const findings = detectLocalWasteFindingsInText("src/lib/variants.ts", text);
+  const inlineParallel = findings.find((finding) => finding.id.includes("inline_parallel"));
+  assert.ok(inlineParallel, "expected an inline-parallel finding for Array.from fanout over images.generate");
+  assert.equal(inlineParallel?.type, "unbatched_parallel", "inline-parallel finding must be unbatched_parallel");
 });
 
 run("#112: bare 'cache' in a comment does not suppress a cache finding", () => {

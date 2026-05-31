@@ -107,7 +107,7 @@ Defines every interface contract used across the pipeline. Nothing is inferred a
 
 **Frequency cost weights:** `unbounded-loop` = 3, `parallel` = 2, `polling` = 2, `bounded-loop` = 1
 
-**Cost leak finding types:** `cache`, `batch`, `n_plus_one`, `redundancy` (weighted by severity: high=3, medium=2, low=1)
+**Cost leak finding types:** `cache`, `batch`, `unbatched_parallel`, `n_plus_one`, `redundancy` (weighted by severity: high=3, medium=2, low=1)
 
 **Reliability finding types:** `rate_limit` (+3), `concurrency_control` (+3)
 

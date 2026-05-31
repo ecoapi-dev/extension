@@ -20,6 +20,7 @@ const typeLabels: Record<string, string> = {
   n_plus_one: "n+1",
   cache: "cache",
   batch: "batch",
+  unbatched_parallel: "unbatched parallel",
   redundancy: "redundancy",
   rate_limit: "rate-limit",
   concurrency_control: "concurrency",

@@ -16,12 +16,16 @@ function makeMatch(overrides: Partial<AstCallMatch>): AstCallMatch {
   };
 }
 
+function findInline(findings: ReturnType<typeof detectBatchWaste>) {
+  return findings.filter((f) => f.id.includes("inline_parallel"));
+}
+
 function run(name: string, fn: () => void): void {
   try { fn(); console.log(`PASS ${name}`); }
   catch (err) { console.error(`FAIL ${name}`); throw err; }
 }
 
-run("inline-parallel: inlineParallelCapable fan-out → n/count suggestion, NOT batch-endpoint text", () => {
+run("inline-parallel: inlineParallelCapable fan-out → unbatched_parallel type, NOT batch-endpoint text", () => {
   const match = makeMatch({ inlineParallelCapable: true, frequency: "parallel", loopContext: true, line: 4 });
   const source = [
     "import OpenAI from 'openai';",
@@ -30,6 +34,7 @@ run("inline-parallel: inlineParallelCapable fan-out → n/count suggestion, NOT 
     "const imgs = await Promise.all(prompts.map((p) => openai.images.generate({ prompt: p })));",
   ].join("\n");
   const findings = detectBatchWaste([match], source, "/project/src/img.ts");
+  const inline = findInline(findings);
   assert.ok(
     findings.some((f) => /n\/count parameter|count parameter|single call/i.test(f.description)),
     `expected an inline-parallel (n/count) suggestion, got: ${JSON.stringify(findings.map((f) => f.description))}`
@@ -38,6 +43,8 @@ run("inline-parallel: inlineParallelCapable fan-out → n/count suggestion, NOT 
     !findings.some((f) => /batch request|batch endpoint|consolidate into a single batch/i.test(f.description)),
     `must not emit batch-endpoint text: ${JSON.stringify(findings.map((f) => f.description))}`
   );
+  assert.equal(inline.length, 1, `expected 1 inline_parallel finding, got ${inline.length}`);
+  assert.equal(inline[0].type, "unbatched_parallel", `expected type unbatched_parallel, got ${inline[0].type}`);
 });
 
 run("inline-parallel: a real batchCapable API in the same shape still emits batch text", () => {
@@ -51,7 +58,7 @@ run("inline-parallel: a real batchCapable API in the same shape still emits batc
   assert.ok(findings.some((f) => f.type === "batch" && /batch/i.test(f.description)), "real batch API should still get batch text");
 });
 
-run("inline-parallel: Array.from({length:n}) idiom stays fully suppressed", () => {
+run("inline-parallel: Array.from({length:n}) idiom now flagged as unbatched_parallel", () => {
   const match = makeMatch({ inlineParallelCapable: true, frequency: "parallel", loopContext: true, line: 3 });
   const source = [
     "import OpenAI from 'openai';",
@@ -59,10 +66,12 @@ run("inline-parallel: Array.from({length:n}) idiom stays fully suppressed", () =
     "const imgs = await Promise.all(Array.from({ length: 4 }).map(() => openai.images.generate({ prompt: 'x' })));",
   ].join("\n");
   const findings = detectBatchWaste([match], source, "/project/src/img.ts");
-  assert.equal(findings.length, 0, `expected no findings for the Array.from idiom, got: ${JSON.stringify(findings.map((f) => f.description))}`);
+  const inline = findInline(findings);
+  assert.equal(inline.length, 1, `expected 1 inline_parallel finding for Array.from idiom, got: ${JSON.stringify(findings.map((f) => f.description))}`);
+  assert.equal(inline[0].type, "unbatched_parallel", `expected type unbatched_parallel, got ${inline[0].type}`);
 });
 
-run("inline-parallel: inlineParallelCapable in an unbounded for-loop → n/count suggestion fires", () => {
+run("inline-parallel: inlineParallelCapable in an unbounded for-loop → unbatched_parallel type fires", () => {
   const match = makeMatch({ inlineParallelCapable: true, frequency: "unbounded-loop", loopContext: true, line: 4 });
   const source = [
     "import OpenAI from 'openai';",
@@ -72,8 +81,23 @@ run("inline-parallel: inlineParallelCapable in an unbounded for-loop → n/count
     "}",
   ].join("\n");
   const findings = detectBatchWaste([match], source, "/project/src/img.ts");
+  const inline = findInline(findings);
   assert.ok(
     findings.some((f) => /n\/count parameter|count parameter|single call/i.test(f.description)),
     `expected an inline-parallel suggestion for the loop case, got: ${JSON.stringify(findings.map((f) => f.description))}`
   );
+  assert.equal(inline.length, 1, `expected 1 inline_parallel finding for loop case, got ${inline.length}`);
+  assert.equal(inline[0].type, "unbatched_parallel", `expected type unbatched_parallel for loop case, got ${inline[0].type}`);
+});
+
+run("inline-parallel: inlineParallelCapable:false → zero inline findings (precision gate)", () => {
+  const match = makeMatch({ inlineParallelCapable: false, frequency: "parallel", loopContext: true, line: 3 });
+  const source = [
+    "import OpenAI from 'openai';",
+    "const openai = new OpenAI();",
+    "const imgs = await Promise.all(Array.from({ length: 5 }).map(() => openai.images.generate({ prompt: 'x' })));",
+  ].join("\n");
+  const findings = detectBatchWaste([match], source, "/project/src/img.ts");
+  const inline = findInline(findings);
+  assert.equal(inline.length, 0, `expected no inline_parallel findings when inlineParallelCapable:false, got: ${JSON.stringify(inline.map((f) => f.description))}`);
 });
