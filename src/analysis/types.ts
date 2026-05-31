@@ -22,6 +22,8 @@ export interface ApiCallInput {
   streaming?: boolean;
   isMiddleware?: boolean;
   crossFileOrigin?: { file: string; functionName: string } | null;
+  /** Dual-location trace. Set by the AST path for cross-file calls; undefined otherwise. */
+  callTrace?: import("../scanner/call-trace").CallTrace;
 }
 
 export interface ScanSummary {
@@ -74,6 +76,8 @@ export interface EndpointCallSite {
   // Enriched fields from AST engine
   frequencyClass?: string;
   crossFileOrigin?: { file: string; functionName: string } | null;
+  /** Dual-location trace for this call site. Degenerate (hops=0) for direct calls. */
+  callTrace?: import("../scanner/call-trace").CallTrace;
 }
 
 export type SuggestionType =

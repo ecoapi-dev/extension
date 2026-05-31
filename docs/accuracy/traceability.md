@@ -77,19 +77,30 @@ interface PropagatedLocation {
 The UI offers both as click targets. Default click lands on `callSite` (where the user worked); a "Show underlying call" affordance jumps to `resolvedSite`.
 
 ### Acceptance criteria
-- [ ] Propagated detections carry both spans + hop count.
-- [ ] Direct (non-propagated) detections have `hops = 0` and the two spans equal.
-- [ ] Webview shows both locations with clear labels.
-- [ ] Stable IDs (B3) hash includes only one of the two spans (suggest: `resolvedSite`) so refactors that move the call site don't reset state.
+- [x] Propagated detections carry both spans + hop count. *(`CallTrace { callSite, resolvedSite, hops }` on `AstCallMatch.trace` → `ApiCallInput.callTrace` → `EndpointCallSite.callTrace` + `ApiCallNode.callTrace`.)*
+- [x] Direct (non-propagated) detections have `hops = 0` and the two spans equal. *(`directTrace()` fallback applied at the three call-site construction sites in `scan-results.ts`.)*
+- [~] Webview shows both locations with clear labels. *(Code landed: `ResultsPage.tsx` Endpoints view shows the call site by default plus a "↳ underlying call" link when `hops > 0`. **Pending manual EDH verification** — F5 the dev host, scan a workspace where a helper wraps an SDK call, confirm both links navigate correctly.)*
+- [x] Stable IDs hash is call-site-stable. *(Satisfied by B3 design — `computeEndpointId` excludes line/column/span, so moving a call site cannot reset the ID; locked in by `endpoint-id.test.ts` "B2/AC-4". The hash is intentionally **not** re-keyed on `resolvedSite.file`: doing so would collapse distinct callers into one endpoint and risk a benchmark detection-metric regression.)*
+
+> **#113 (corpus fixtures) — blocked here.** The 7 barrel/factory/DI fixtures live in
+> `recost-dev/extension-benchmark` (separate repo). Once they land, refresh the baseline:
+> `npm run benchmark -- --fixtures ../extension-benchmark --update-baseline`, then commit the
+> regenerated `benchmark/baseline.json`. No `extension`-repo code change is required for #113.
 
 ### Files
+- `src/scanner/call-trace.ts` (new — `CallTrace`/`ResolvedLocation`/`directTrace`)
+- `src/ast/ast-scanner.ts` (`AstCallMatch.trace`)
 - `src/ast/cross-file-resolver.ts`
-- `src/intelligence/types.ts`
-- `webview/src/components/ResultsPage.tsx`
+- `src/analysis/types.ts` (`ApiCallInput.callTrace`, `EndpointCallSite.callTrace`)
+- `src/scanner/core-scanner.ts`, `src/scan-results.ts`
+- `src/intelligence/types.ts` (`ApiCallNode.callTrace`), `src/intelligence/builder.ts`
+- `webview/src/types.ts`, `webview/src/components/ResultsPage.tsx`
 
 ### Depends on
-- B1 (spans must exist first).
+- B1 (spans must exist first). *(Landed.)*
 - A1 (wrapper depth — once hops can be >1, this becomes more useful).
+
+✅ Landed: 2026-05-30 on branch `claude/recent-pr-explanation-C7Xcw`. Acceptance criteria 1, 2, 4 automated-verified (`npm run test:scanner` green incl. 7 new B2 cases; `npm run build` clean); #3 awaits manual EDH check. Benchmark gate runs in CI only (fixtures repo not accessible locally); Δ expected +0.00pp — B2 is additive metadata and changes no detection/inclusion/finding logic.
 
 ---
 

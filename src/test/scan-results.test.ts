@@ -130,3 +130,50 @@ run("buildLocalScanResults collapses a local finding that duplicates an aggressi
   const nplus = suggestions.filter((s) => s.type === "n_plus_one" && s.affectedFiles[0] === "src/b.ts");
   assert.ok(nplus.length <= 1, "duplicate n_plus_one on same endpoint should collapse");
 });
+
+run("B2: cross-file call yields a callSite with hops>=1 and distinct resolvedSite", () => {
+  const calls: ApiCallInput[] = [
+    {
+      file: "app.ts",
+      line: 3,
+      span: { startLine: 3, startColumn: 0, endLine: 3, endColumn: 20 },
+      method: "POST",
+      url: "https://api.openai.com/v1/chat/completions",
+      library: "openai",
+      provider: "openai",
+      methodSignature: "chat.completions.create",
+      callTrace: {
+        callSite: { file: "app.ts", span: { startLine: 3, startColumn: 0, endLine: 3, endColumn: 20 } },
+        resolvedSite: { file: "lib/ai.ts", span: { startLine: 4, startColumn: 2, endLine: 4, endColumn: 60 } },
+        hops: 1,
+      },
+    },
+  ];
+  const { endpoints } = buildLocalScanResults(calls, [], "proj", "local-test");
+  const ep = endpoints.find((e) => e.provider === "openai")!;
+  const site = ep.callSites[0];
+  assert.ok(site.callTrace, "call site should carry a callTrace");
+  assert.equal(site.callTrace!.hops, 1);
+  assert.equal(site.callTrace!.callSite.file, "app.ts");
+  assert.equal(site.callTrace!.resolvedSite.file, "lib/ai.ts");
+});
+
+run("B2: direct call gets a degenerate callTrace (hops=0, sites equal)", () => {
+  const calls: ApiCallInput[] = [
+    {
+      file: "solo.ts",
+      line: 9,
+      span: { startLine: 9, startColumn: 0, endLine: 9, endColumn: 30 },
+      method: "POST",
+      url: "https://api.openai.com/v1/chat/completions",
+      library: "openai",
+      provider: "openai",
+      methodSignature: "chat.completions.create",
+    },
+  ];
+  const { endpoints } = buildLocalScanResults(calls, [], "proj", "local-test");
+  const site = endpoints[0].callSites[0];
+  assert.ok(site.callTrace, "direct call should still carry a (degenerate) callTrace");
+  assert.equal(site.callTrace!.hops, 0);
+  assert.deepEqual(site.callTrace!.callSite, site.callTrace!.resolvedSite);
+});

@@ -6,6 +6,17 @@ export interface SourceSpan {
   endColumn: number;
 }
 
+export interface ResolvedLocation {
+  file: string;
+  span: SourceSpan;
+}
+
+export interface CallTrace {
+  callSite: ResolvedLocation;
+  resolvedSite: ResolvedLocation;
+  hops: number;
+}
+
 export type EndpointStatus =
   | "normal"
   | "redundant"
@@ -34,6 +45,7 @@ export interface EndpointRecord {
     frequency?: string;
     frequencyClass?: string;
     crossFileOrigin?: { file: string; functionName: string } | null;
+    callTrace?: CallTrace;
   }[];
   callsPerDay: number;
   monthlyCost: number;

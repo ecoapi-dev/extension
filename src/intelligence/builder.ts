@@ -202,6 +202,7 @@ export function buildRepoIntelligenceSnapshot(
         streaming: Boolean(call.streaming),
         isMiddleware: Boolean(call.isMiddleware),
         crossFileOrigin: normalizeCrossFileOrigin(call.crossFileOrigin),
+        callTrace: call.callTrace,
       };
 
       apiCalls[apiCallId] = apiCallNode;

@@ -314,4 +314,59 @@ async function run() {
   assert.equal(callerMatches.length, 1, "Original match should be preserved");
 });
 
+run("B2: propagated match carries a trace (hops=1, callSite=caller, resolvedSite=callee)", () => {
+  const calleeFile: PerFileResult = {
+    filePath: "/project/lib/ai.ts",
+    relativePath: "lib/ai.ts",
+    source: `
+import OpenAI from "openai";
+const client = new OpenAI();
+export async function callAI(prompt: string) {
+  return await client.chat.completions.create({ model: "gpt-4o", messages: [] });
+}
+`.trim(),
+    result: makeResult({ matches: [makeMatch({ line: 4 })] }),
+  };
+  const callerFile: PerFileResult = {
+    filePath: "/project/app.ts",
+    relativePath: "app.ts",
+    source: `
+import { callAI } from "./lib/ai";
+async function handle() {
+  await callAI("hi");
+}
+`.trim(),
+    result: makeResult({
+      matches: [makeMatch({ methodChain: "callAI", provider: undefined, packageName: undefined, line: 3 })],
+    }),
+  };
+
+  const output = runCrossFileResolution([calleeFile, callerFile]);
+  const propagated = output.get("app.ts")!.filter((m) => m.crossFile);
+  assert.ok(propagated.length > 0, "expected a propagated match");
+  const trace = propagated[0].trace;
+  assert.ok(trace, "propagated match should carry a trace");
+  assert.equal(trace!.hops, 1, "single wrapper hop");
+  assert.equal(trace!.callSite.file, "app.ts", "callSite is the caller file");
+  assert.equal(trace!.callSite.span.startLine, 3, "callSite span points at the caller's call line (not the callee's)");
+  assert.equal(trace!.resolvedSite.file, "lib/ai.ts", "resolvedSite is the callee file");
+  assert.equal(trace!.resolvedSite.span.startLine, 4, "resolvedSite span points at the SDK call line");
+});
+
+run("B2: direct (non-propagated) match has no trace", () => {
+  const file: PerFileResult = {
+    filePath: "/project/solo.ts",
+    relativePath: "solo.ts",
+    source: `
+import OpenAI from "openai";
+const client = new OpenAI();
+await client.chat.completions.create({ model: "gpt-4o", messages: [] });
+`.trim(),
+    result: makeResult({ matches: [makeMatch({ line: 3 })] }),
+  };
+  const output = runCrossFileResolution([file]);
+  const direct = output.get("solo.ts")!.filter((m) => !m.crossFile);
+  assert.equal(direct[0].trace, undefined, "direct matches carry no trace (defaulted downstream)");
+});
+
 console.log("\nAll ast-cross-file-resolver tests passed.");
